@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-deep-grep — grep for a term across a workspace, even inside Office and PDF files.
+document-search — grep for a term across a workspace, even inside Office and PDF files.
 
 Unlike ordinary `grep` / `rg`, this skill can look inside binary-wrapped
 document formats (.docx, .pptx, .xlsx, .pdf) as well as 60+ text and code
@@ -9,7 +9,7 @@ search term, sorted by match count — exactly what an AI agent needs when a
 user asks "which files mention X?".
 
 Usage:
-    deep_grep.py <pattern> [path] [--ext .py,.md,.docx]
+    document_search.py <pattern> [path] [--ext .py,.md,.docx]
                  [--fixed-string] [--ignore-case]
                  [--show-matches] [--context N]
                  [--max-bytes N] [--max-files N]
@@ -28,6 +28,11 @@ import sys
 from dataclasses import dataclass, field, asdict
 from pathlib import Path
 from typing import Iterator, Optional
+
+# Local, self-contained helper for install-guide generation. Kept as a
+# sibling so the skill folder stays copy-and-go.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import _preflight  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # Supported extensions
@@ -123,8 +128,10 @@ class ScanSummary:
     files_scanned: int
     files_matched: int
     total_matches: int
-    skipped_missing_deps: dict[str, int]  # ext -> count
-    results: list[FileHit]
+    skipped_missing_deps: dict[str, int]         # ext -> count
+    missing_imports: list[str] = field(default_factory=list)  # e.g. ["docx", "pypdf"]
+    install_guide: Optional[str] = None          # populated only if missing_imports
+    results: list[FileHit] = field(default_factory=list)
 
 
 # ---------------------------------------------------------------------------
@@ -141,11 +148,19 @@ def read_text_file(path: Path, max_bytes: int) -> tuple[str, bool]:
     return raw.decode("utf-8", errors="replace"), truncated
 
 
+class MissingDependency(RuntimeError):
+    """Raised when an optional reader library is not installed."""
+    def __init__(self, import_name: str, feature: str):
+        self.import_name = import_name
+        self.feature = feature
+        super().__init__(f"missing optional package '{import_name}' for {feature}")
+
+
 def read_docx(path: Path) -> str:
     try:
         import docx  # type: ignore  # python-docx
     except ImportError as e:
-        raise RuntimeError("python-docx not installed (pip install python-docx)") from e
+        raise MissingDependency("docx", ".docx reading") from e
     document = docx.Document(str(path))
     parts: list[str] = []
     for para in document.paragraphs:
@@ -162,7 +177,7 @@ def read_pptx(path: Path) -> str:
     try:
         from pptx import Presentation  # type: ignore  # python-pptx
     except ImportError as e:
-        raise RuntimeError("python-pptx not installed (pip install python-pptx)") from e
+        raise MissingDependency("pptx", ".pptx reading") from e
     prs = Presentation(str(path))
     parts: list[str] = []
     for i, slide in enumerate(prs.slides, start=1):
@@ -177,7 +192,7 @@ def read_xlsx(path: Path) -> str:
     try:
         import openpyxl  # type: ignore
     except ImportError as e:
-        raise RuntimeError("openpyxl not installed (pip install openpyxl)") from e
+        raise MissingDependency("openpyxl", ".xlsx reading") from e
     wb = openpyxl.load_workbook(str(path), data_only=True, read_only=True)
     parts: list[str] = []
     for sheet_name in wb.sheetnames:
@@ -193,7 +208,7 @@ def read_pdf(path: Path) -> str:
     try:
         import pypdf  # type: ignore
     except ImportError as e:
-        raise RuntimeError("pypdf not installed (pip install pypdf)") from e
+        raise MissingDependency("pypdf", ".pdf reading") from e
     reader = pypdf.PdfReader(str(path))
     parts: list[str] = []
     for i, page in enumerate(reader.pages, start=1):
@@ -313,6 +328,7 @@ def scan(
         skipped_missing_deps={},
         results=[],
     )
+    missing_imports_set: set[str] = set()
 
     count = 0
     for path in iter_files(root, extensions, ignore_dirs, include_hidden):
@@ -345,9 +361,10 @@ def scan(
                     truncated = True
             else:
                 content, truncated = read_text_file(path, max_bytes)
-        except RuntimeError as e:
+        except MissingDependency as e:
             # Missing optional dep — report but keep going.
             summary.skipped_missing_deps[ext] = summary.skipped_missing_deps.get(ext, 0) + 1
+            missing_imports_set.add(e.import_name)
             summary.results.append(FileHit(
                 path=str(path), extension=ext, kind=kind, size=size,
                 match_count=0, error=str(e),
@@ -382,6 +399,14 @@ def scan(
     # Sort: successful hits first (by match count desc, then path), errored
     # entries at the end. The renderer splits them into separate sections.
     summary.results.sort(key=lambda r: (r.error is not None, -r.match_count, r.path))
+
+    if missing_imports_set:
+        summary.missing_imports = sorted(missing_imports_set)
+        summary.install_guide = _preflight.format_install_guide(
+            summary.missing_imports,
+            feature="reading .docx / .pptx / .xlsx / .pdf files",
+            skill_name="document-search",
+        )
     return summary
 
 
@@ -391,7 +416,7 @@ def scan(
 
 def render_text(summary: ScanSummary, show_matches: bool) -> str:
     out: list[str] = []
-    out.append("# deep-grep results")
+    out.append("# document-search results")
     out.append(f"pattern: {summary.pattern!r}")
     out.append(f"root:    {summary.root}")
     out.append(f"files matched: {summary.files_matched} / {summary.files_scanned} scanned "
@@ -423,6 +448,11 @@ def render_text(summary: ScanSummary, show_matches: bool) -> str:
         for r in errored:
             out.append(f"  {r.path}  — {r.error}")
 
+    if summary.install_guide:
+        out.append("")
+        out.append("## Install guide for skipped files")
+        out.append(summary.install_guide)
+
     if show_matches and hits:
         out.append("")
         out.append("## Match details")
@@ -447,6 +477,8 @@ def render_json(summary: ScanSummary) -> str:
         "files_matched": summary.files_matched,
         "total_matches": summary.total_matches,
         "skipped_missing_deps": summary.skipped_missing_deps,
+        "missing_imports": summary.missing_imports,
+        "install_guide": summary.install_guide,
         "results": [asdict(r) for r in summary.results],
     }
     return json.dumps(payload, ensure_ascii=False, indent=2)
@@ -482,7 +514,7 @@ def parse_ignores(raw: Optional[str]) -> set[str]:
 
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
-        prog="deep_grep.py",
+        prog="document_search.py",
         description="Grep for a term across a workspace — including inside "
                     ".docx, .pptx, .xlsx, and .pdf files. Returns a ranked "
                     "list of files that contain the term.",
@@ -518,6 +550,14 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: Optional[list[str]] = None) -> int:
+    # Force UTF-8 on stdout/stderr so bilingual install guides render on
+    # Windows consoles (default cp1252) and redirected pipes alike.
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")  # type: ignore[attr-defined]
+        except (AttributeError, ValueError):
+            pass
+
     args = build_parser().parse_args(argv)
 
     root = Path(args.path)

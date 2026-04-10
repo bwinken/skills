@@ -24,17 +24,25 @@ pip install <package-a> <package-b>
 
 ## Installation
 
-Clone the parent repo and use this skill directly:
+### Claude Code — plugin marketplace
 
-```bash
-git clone https://github.com/bwinken/skills-library.git
-cd skills-library/skills/<skill-name>
+```text
+/plugin marketplace add bwinken/skills
+/plugin install <skill-name>@skills
 ```
 
-Or copy just this folder into your own project / agent configuration:
+### Other agents — clone the repo
 
 ```bash
-cp -r skills/<skill-name> /destination/
+git clone https://github.com/bwinken/skills.git
+cd skills
+python install.py install <skill-name> --agent claude   # or roo, cline
+```
+
+Or copy just this skill folder into your own project:
+
+```bash
+python -c "import shutil; shutil.copytree('skills/<skill-name>', '/destination/<skill-name>')"
 ```
 
 ---

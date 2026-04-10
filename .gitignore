@@ -73,7 +73,7 @@ desktop.ini
 *.sublime-workspace
 *.sublime-project
 
-# ---- SkillForge packaging artifacts ----
+# ---- Skill packaging artifacts ----
 *.skill
 *.skill.zip
 dist-skills/

@@ -1,7 +1,7 @@
 ---
 name: <skill-name>
 description: "<One sentence that tells an agent exactly when to use this skill and what it does.>"
-compatibility: "Claude Code, Roo Code, Aider, Cursor, Cline"
+compatibility: "Claude Code, Roo Code, Cline"
 ---
 
 # <Skill Name>
@@ -56,30 +56,32 @@ python3 scripts/<entry>.py <required-arg> --flag value --other-flag
 
 ## Integration
 
-### Claude Code
+All three supported agents (Claude Code, Roo Code, Cline) natively auto-discover skills from their standard folders — no manual registration needed.
+
+### One-file installer (recommended)
 
 ```bash
-mkdir -p ~/.claude/skills
-cp -r skills/<skill-name> ~/.claude/skills/
+curl -fsSLO https://raw.githubusercontent.com/bwinken/skills/main/install.py
+python install.py                                          # interactive wizard
+python install.py install <skill-name> --agent claude      # or roo, cline
 ```
 
-### Roo Code / Cursor / Cline
+### Claude Code — plugin marketplace (alternative)
 
-Register the script as a custom tool:
-
-```jsonc
-{
-  "name": "<skill-name>",
-  "command": "python3 /absolute/path/to/skills/<skill-name>/scripts/<entry>.py",
-  "description": "<short description>"
-}
+```text
+/plugin marketplace add bwinken/skills
+/plugin install <skill-name>@skills
 ```
 
-### Any shell-capable agent
+### Manual install
 
-```bash
-python3 /path/to/skills/<skill-name>/scripts/<entry>.py --help
-```
+Copy this skill folder into the agent's skills directory:
+
+| Agent | Global | Workspace |
+|-------|--------|-----------|
+| Claude Code | `~/.claude/skills/<skill-name>/` | `./.claude/skills/<skill-name>/` |
+| Roo Code | `~/.roo/skills/<skill-name>/` | `./.roo/skills/<skill-name>/` |
+| Cline | `~/.cline/skills/<skill-name>/` | `./.cline/skills/<skill-name>/` |
 
 ## Examples
 

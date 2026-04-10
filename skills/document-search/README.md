@@ -1,10 +1,10 @@
-# deep-grep
+# document-search
 
-> Grep for a term across a workspace and get back a ranked list of files that contain it — including inside `.docx`, `.pptx`, `.xlsx`, and `.pdf`.
+> Search a folder for a term and get back a ranked list of files that contain it — including inside `.docx`, `.pptx`, `.xlsx`, and `.pdf`.
 
-`deep-grep` is a grep that doesn't go blind on Office and PDF files. Point it at a folder, give it a search term, and it walks the tree, extracts text from 60+ text/code formats **and** Microsoft Office / PDF documents, counts matches per file, and emits a compact list sorted by match count.
+`document-search` is a grep that doesn't go blind on Office and PDF files. Point it at a folder, give it a search term, and it walks the tree, extracts text from 60+ text/code formats **and** Microsoft Office / PDF documents, counts matches per file, and emits a compact list sorted by match count.
 
-It's the first skill in the [SkillForge](../../README.md) library and a good reference for how skills in this repo are structured.
+It's the first half of the **文書工作 (office workflow)** suite in this repo — pair it with the `document-readers` plugin ([`pdf-reader`](../pdf-reader/), [`docx-reader`](../docx-reader/), [`xlsx-reader`](../xlsx-reader/), [`pptx-reader`](../pptx-reader/)) when you want to search first, then read the matching file's content.
 
 ---
 
@@ -12,7 +12,7 @@ It's the first skill in the [SkillForge](../../README.md) library and a good ref
 
 Ordinary `grep`, `rg`, `ag`, and every IDE "Find in Files" feature treat `.docx`, `.pptx`, `.xlsx`, and `.pdf` as binary noise and skip them. That's fine until your user has a `/docs` folder full of Word specs and PDF reports and asks *"which of these mentions the quarterly revenue target?"* — suddenly none of the standard tools help.
 
-`deep-grep` plugs that gap. For text / code files it behaves like any normal grep (and is dependency-free). For Office / PDF it first extracts text via optional libraries (`python-docx`, `python-pptx`, `openpyxl`, `pypdf`) and then searches that. You get one ranked list that covers the whole workspace.
+`document-search` plugs that gap. For text / code files it behaves like any normal grep (and is dependency-free). For Office / PDF it first extracts text via optional libraries (`python-docx`, `python-pptx`, `openpyxl`, `pypdf`) and then searches that. You get one ranked list that covers the whole workspace.
 
 ---
 
@@ -23,7 +23,7 @@ Ordinary `grep`, `rg`, `ag`, and every IDE "Find in Files" feature treat `.docx`
 - **Regex or literal search** (`-F`), **case-insensitive** (`-i`)
 - **Optional line-level output** (`--show-matches` / `--context N`)
 - **Context-window safe** — `--max-bytes` and `--max-files` caps so nothing blows up the agent
-- **Graceful degradation** — missing an optional library? The scan still runs; affected files are reported under `skipped_missing_deps`
+- **Graceful degradation** — missing an optional library? The scan still runs; affected files are reported under `skipped_missing_deps` and a bilingual install guide is printed at the end
 - **Grep-style exit codes** — `0` if anything matched, `1` if nothing did
 - **`text` and `json` output modes**
 - **Python 3.8+ standard library** for the core
@@ -56,29 +56,42 @@ pip install python-docx python-pptx openpyxl pypdf
 
 ## Installation
 
-### As part of SkillForge
+Works with **Claude Code**, **Roo Code**, and **Cline** — all three natively auto-discover this skill from their standard folders.
+
+### Easiest — one-file installer
 
 ```bash
-git clone https://github.com/bwinken/skills-library.git
-cd skills-library
-python3 skills/deep-grep/scripts/deep_grep.py --help
+# macOS / Linux
+curl -fsSLO https://raw.githubusercontent.com/bwinken/skills/main/install.py
+python install.py            # interactive wizard
+
+# Windows (PowerShell)
+iwr https://raw.githubusercontent.com/bwinken/skills/main/install.py -OutFile install.py
+python install.py
 ```
 
-### Standalone (copy just this folder)
+Non-interactive variant:
 
 ```bash
-cp -r skills/deep-grep ~/my-project/tools/
-python3 ~/my-project/tools/deep-grep/scripts/deep_grep.py --help
+python install.py install document-search --agent claude               # global
+python install.py install document-search --agent roo --scope workspace
+python install.py install document-search --agent cline
 ```
 
-### Claude Code
+### Claude Code — plugin marketplace
 
-```bash
-mkdir -p ~/.claude/skills
-cp -r skills/deep-grep ~/.claude/skills/
+```text
+/plugin marketplace add bwinken/skills
+/plugin install document-search@skills
 ```
 
-See [SKILL.md](SKILL.md) for Roo Code, Cursor, Cline, and Aider integration snippets.
+### Manual install
+
+| Agent | Global | Workspace |
+|-------|--------|-----------|
+| Claude Code | `~/.claude/skills/document-search/` | `./.claude/skills/document-search/` |
+| Roo Code | `~/.roo/skills/document-search/` | `./.roo/skills/document-search/` |
+| Cline | `~/.cline/skills/document-search/` | `./.cline/skills/document-search/` |
 
 ---
 
@@ -89,32 +102,32 @@ See [SKILL.md](SKILL.md) for Roo Code, Cursor, Cline, and Aider integration snip
 Find a term across the whole workspace:
 
 ```bash
-python3 scripts/deep_grep.py "DATABASE_URL" .
+python3 scripts/document_search.py "DATABASE_URL" .
 ```
 
 Literal string, case-insensitive, only in docs:
 
 ```bash
-python3 scripts/deep_grep.py "Q4 roadmap" ./docs -F -i
+python3 scripts/document_search.py "Q4 roadmap" ./docs -F -i
 ```
 
 TODO hunt in source code with 2 lines of context:
 
 ```bash
-python3 scripts/deep_grep.py "TODO|FIXME" ./src --ext .py,.ts --context 2
+python3 scripts/document_search.py "TODO|FIXME" ./src --ext .py,.ts --context 2
 ```
 
 Office + PDF search:
 
 ```bash
 pip install python-docx pypdf
-python3 scripts/deep_grep.py "auth token" ./docs --ext .docx,.pdf
+python3 scripts/document_search.py "auth token" ./docs --ext .docx,.pdf
 ```
 
 JSON for piping into `jq` or another tool:
 
 ```bash
-python3 scripts/deep_grep.py "deprecated" . --format json | jq '.results[] | {path, match_count}'
+python3 scripts/document_search.py "deprecated" . --format json | jq '.results[] | {path, match_count}'
 ```
 
 ### Full option list
@@ -135,7 +148,7 @@ python3 scripts/deep_grep.py "deprecated" . --format json | jq '.results[] | {pa
 | `--include-hidden` | off | Include dotfiles |
 | `--format` | `text` | `text` or `json` |
 
-Run `python3 scripts/deep_grep.py --help` for the live version.
+Run `python3 scripts/document_search.py --help` for the live version.
 
 ### Default ignored directories
 
@@ -148,7 +161,7 @@ Run `python3 scripts/deep_grep.py --help` for the live version.
 ### Text mode (default — ranked file list)
 
 ```text
-# deep-grep results
+# document-search results
 pattern: 'auth token'
 root:    /home/alice/project
 files matched: 3 / 128 scanned (17 total matches)
@@ -222,5 +235,6 @@ Files larger than `--max-bytes` are truncated and marked `"truncated": true` so 
 ## See also
 
 - [SKILL.md](SKILL.md) — agent-facing skill definition
-- [Root README](../../README.md) — the full SkillForge library
+- Companion readers: [pdf-reader](../pdf-reader/), [docx-reader](../docx-reader/), [xlsx-reader](../xlsx-reader/), [pptx-reader](../pptx-reader/) — extract content from a single document
+- [Root README](../../README.md) — the full skills library
 - [CONTRIBUTING](../../CONTRIBUTING.md) — how to add your own skill
