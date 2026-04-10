@@ -52,7 +52,7 @@ The current skills cover the **文書工作 (office workflow)** core loop: **fin
 
 The `document-readers` plugin bundles all four readers together — install once, get support for PDF / Word / Excel / PowerPoint. Install them individually if you only need one format.
 
-More skills coming soon. Contributions welcome — see [CONTRIBUTING.md](CONTRIBUTING.md).
+More skills are planned — see [ROADMAP.md](ROADMAP.md) for the design notes on upcoming skills (`document-analyzer`, `project-structure`, `code-review`, and a cluster of document-organization skills). Contributions welcome — see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Related marketplaces
 
