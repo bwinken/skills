@@ -22,8 +22,8 @@ Skill names must be:
 - **kebab-case** (hyphen-separated)
 - **descriptive and concrete**
 
-Good: `file-scanner`, `doc-summarizer`, `pytest-runner`, `dependency-graph`
-Bad: `FileScanner`, `scanner`, `utils`, `my_tool`
+Good: `deep-grep`, `doc-summarizer`, `pytest-runner`, `dependency-graph`
+Bad: `DeepGrep`, `scanner`, `utils`, `my_tool`
 
 ### Step 2 — Copy the templates
 

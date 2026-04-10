@@ -6,7 +6,7 @@ This directory holds every skill in SkillForge. Each subfolder is a self-contain
 
 | Skill | Description |
 |-------|-------------|
-| [file-scanner](file-scanner/) | Recursively scan a workspace and extract text content from 60+ file types (code, markdown, Word, PDF, PowerPoint, Excel, and more). Supports extension filtering, grep, size limits, and JSON output. |
+| [deep-grep](deep-grep/) | Grep for a term across a workspace and return a ranked list of files that contain it — **including inside `.docx`, `.pptx`, `.xlsx`, and `.pdf`** where ordinary grep/rg are blind. Supports regex or literal match, case-insensitive, line-level context, and text/JSON output. |
 
 ## Adding a new skill
 

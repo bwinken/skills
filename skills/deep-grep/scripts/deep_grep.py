@@ -1,32 +1,33 @@
 #!/usr/bin/env python3
 """
-file-scanner — recursively scan a workspace and extract text from files.
+deep-grep — grep for a term across a workspace, even inside Office and PDF files.
 
-Supports 60+ file types out of the box, including plain text / code files
-and (optionally, if the relevant library is installed) Microsoft Office
-documents and PDFs.
-
-Designed to be invoked by AI coding agents (Claude Code, Roo Code, Aider,
-Cursor, Cline, ...) to ground their context in actual workspace content.
+Unlike ordinary `grep` / `rg`, this skill can look inside binary-wrapped
+document formats (.docx, .pptx, .xlsx, .pdf) as well as 60+ text and code
+file types. The default output is a compact list of files that contain the
+search term, sorted by match count — exactly what an AI agent needs when a
+user asks "which files mention X?".
 
 Usage:
-    scan.py <path> [--ext .py,.md] [--grep PATTERN] [--format text|json]
-            [--max-bytes N] [--max-files N] [--ignore DIR,DIR]
-            [--context N] [--list-only] [--include-hidden]
+    deep_grep.py <pattern> [path] [--ext .py,.md,.docx]
+                 [--fixed-string] [--ignore-case]
+                 [--show-matches] [--context N]
+                 [--max-bytes N] [--max-files N]
+                 [--ignore DIR,DIR] [--include-hidden]
+                 [--format text|json]
 
 Run with --help for the full option list.
 """
 from __future__ import annotations
 
 import argparse
-import fnmatch
 import json
 import os
 import re
 import sys
 from dataclasses import dataclass, field, asdict
 from pathlib import Path
-from typing import Iterable, Iterator, Optional
+from typing import Iterator, Optional
 
 # ---------------------------------------------------------------------------
 # Supported extensions
@@ -95,25 +96,35 @@ EXTENSIONLESS_TEXT_NAMES: set[str] = {
 # ---------------------------------------------------------------------------
 
 @dataclass
-class FileResult:
+class Match:
+    line: int
+    text: str
+    before: list[str] = field(default_factory=list)
+    after: list[str] = field(default_factory=list)
+
+
+@dataclass
+class FileHit:
     path: str
-    size: int
     extension: str
     kind: str                         # "text" | "docx" | "pptx" | "xlsx" | "pdf"
+    size: int
+    match_count: int
     truncated: bool = False
-    content: Optional[str] = None     # None in --list-only mode
-    matches: list[dict] = field(default_factory=list)  # for --grep
+    matches: list[Match] = field(default_factory=list)  # empty unless --show-matches
+    content: Optional[str] = None     # populated only with --content
     error: Optional[str] = None
 
 
 @dataclass
 class ScanSummary:
+    pattern: str
     root: str
     files_scanned: int
     files_matched: int
-    bytes_read: int
+    total_matches: int
     skipped_missing_deps: dict[str, int]  # ext -> count
-    results: list[FileResult]
+    results: list[FileHit]
 
 
 # ---------------------------------------------------------------------------
@@ -127,17 +138,14 @@ def read_text_file(path: Path, max_bytes: int) -> tuple[str, bool]:
     truncated = len(raw) > max_bytes
     if truncated:
         raw = raw[:max_bytes]
-    # Decode leniently — the goal is to surface content to an LLM, not
-    # to be byte-perfect.
-    text = raw.decode("utf-8", errors="replace")
-    return text, truncated
+    return raw.decode("utf-8", errors="replace"), truncated
 
 
 def read_docx(path: Path) -> str:
     try:
         import docx  # type: ignore  # python-docx
     except ImportError as e:
-        raise RuntimeError("python-docx not installed") from e
+        raise RuntimeError("python-docx not installed (pip install python-docx)") from e
     document = docx.Document(str(path))
     parts: list[str] = []
     for para in document.paragraphs:
@@ -154,7 +162,7 @@ def read_pptx(path: Path) -> str:
     try:
         from pptx import Presentation  # type: ignore  # python-pptx
     except ImportError as e:
-        raise RuntimeError("python-pptx not installed") from e
+        raise RuntimeError("python-pptx not installed (pip install python-pptx)") from e
     prs = Presentation(str(path))
     parts: list[str] = []
     for i, slide in enumerate(prs.slides, start=1):
@@ -169,7 +177,7 @@ def read_xlsx(path: Path) -> str:
     try:
         import openpyxl  # type: ignore
     except ImportError as e:
-        raise RuntimeError("openpyxl not installed") from e
+        raise RuntimeError("openpyxl not installed (pip install openpyxl)") from e
     wb = openpyxl.load_workbook(str(path), data_only=True, read_only=True)
     parts: list[str] = []
     for sheet_name in wb.sheetnames:
@@ -185,7 +193,7 @@ def read_pdf(path: Path) -> str:
     try:
         import pypdf  # type: ignore
     except ImportError as e:
-        raise RuntimeError("pypdf not installed") from e
+        raise RuntimeError("pypdf not installed (pip install pypdf)") from e
     reader = pypdf.PdfReader(str(path))
     parts: list[str] = []
     for i, page in enumerate(reader.pages, start=1):
@@ -244,26 +252,39 @@ def iter_files(
 
 
 # ---------------------------------------------------------------------------
-# Grep
+# Match logic
 # ---------------------------------------------------------------------------
 
-def find_matches(text: str, pattern: re.Pattern, context: int) -> list[dict]:
-    """Return a list of {line, text, before, after} match dicts."""
-    if context < 0:
-        context = 0
+def count_and_collect(
+    text: str,
+    pattern: re.Pattern,
+    *,
+    collect: bool,
+    context: int,
+) -> tuple[int, list[Match]]:
+    """
+    Return (match_count, matches). If `collect` is False, `matches` is empty
+    but match_count is still accurate.
+    """
+    if not collect:
+        return len(pattern.findall(text)), []
+
     lines = text.splitlines()
-    matches: list[dict] = []
+    matches: list[Match] = []
+    total = 0
     for idx, line in enumerate(lines):
-        if pattern.search(line):
+        hits = len(pattern.findall(line))
+        if hits:
+            total += hits
             start = max(0, idx - context)
             end = min(len(lines), idx + context + 1)
-            matches.append({
-                "line": idx + 1,
-                "text": line,
-                "before": lines[start:idx],
-                "after":  lines[idx + 1:end],
-            })
-    return matches
+            matches.append(Match(
+                line=idx + 1,
+                text=line,
+                before=lines[start:idx],
+                after=lines[idx + 1:end],
+            ))
+    return total, matches
 
 
 # ---------------------------------------------------------------------------
@@ -272,21 +293,23 @@ def find_matches(text: str, pattern: re.Pattern, context: int) -> list[dict]:
 
 def scan(
     root: Path,
+    pattern: re.Pattern,
     *,
     extensions: set[str],
     ignore_dirs: set[str],
-    grep: Optional[re.Pattern],
     max_bytes: int,
     max_files: int,
     include_hidden: bool,
-    list_only: bool,
+    show_matches: bool,
+    include_content: bool,
     context: int,
 ) -> ScanSummary:
     summary = ScanSummary(
+        pattern=pattern.pattern,
         root=str(root.resolve()),
         files_scanned=0,
         files_matched=0,
-        bytes_read=0,
+        total_matches=0,
         skipped_missing_deps={},
         results=[],
     )
@@ -296,70 +319,69 @@ def scan(
         if max_files and count >= max_files:
             break
         count += 1
+        summary.files_scanned += 1
 
         try:
             size = path.stat().st_size
         except OSError as e:
-            summary.results.append(FileResult(
-                path=str(path), size=0, extension=path.suffix.lower(),
-                kind="text", error=f"stat failed: {e}",
+            summary.results.append(FileHit(
+                path=str(path), extension=path.suffix.lower(), kind="text",
+                size=0, match_count=0, error=f"stat failed: {e}",
             ))
             continue
 
         ext = path.suffix.lower()
-        result = FileResult(
-            path=str(path),
-            size=size,
-            extension=ext,
-            kind="text",
-        )
-
-        if list_only and not grep:
-            summary.files_scanned += 1
-            summary.results.append(result)
-            continue
-
-        # Extract content
+        kind = "text"
         content: Optional[str] = None
+        truncated = False
+
         try:
             if ext in BINARY_READERS:
                 kind, reader = BINARY_READERS[ext]
-                result.kind = kind
                 content = reader(path)
-                if len(content.encode("utf-8", errors="ignore")) > max_bytes:
-                    content = content.encode("utf-8", errors="ignore")[:max_bytes].decode("utf-8", errors="replace")
-                    result.truncated = True
+                encoded = content.encode("utf-8", errors="ignore")
+                if len(encoded) > max_bytes:
+                    content = encoded[:max_bytes].decode("utf-8", errors="replace")
+                    truncated = True
             else:
-                content, result.truncated = read_text_file(path, max_bytes)
+                content, truncated = read_text_file(path, max_bytes)
         except RuntimeError as e:
-            # Missing optional dep
-            result.error = str(e)
+            # Missing optional dep — report but keep going.
             summary.skipped_missing_deps[ext] = summary.skipped_missing_deps.get(ext, 0) + 1
-            summary.results.append(result)
-            summary.files_scanned += 1
+            summary.results.append(FileHit(
+                path=str(path), extension=ext, kind=kind, size=size,
+                match_count=0, error=str(e),
+            ))
             continue
         except Exception as e:  # noqa: BLE001
-            result.error = f"read failed: {e}"
-            summary.results.append(result)
-            summary.files_scanned += 1
+            summary.results.append(FileHit(
+                path=str(path), extension=ext, kind=kind, size=size,
+                match_count=0, error=f"read failed: {e}",
+            ))
             continue
 
-        summary.bytes_read += len(content.encode("utf-8", errors="ignore"))
+        match_count, matches = count_and_collect(
+            content, pattern, collect=show_matches, context=context,
+        )
+        if match_count == 0:
+            continue
 
-        if grep is not None:
-            matches = find_matches(content, grep, context)
-            if not matches:
-                summary.files_scanned += 1
-                continue
-            result.matches = matches
-            summary.files_matched += 1
+        summary.files_matched += 1
+        summary.total_matches += match_count
+        summary.results.append(FileHit(
+            path=str(path),
+            extension=ext,
+            kind=kind,
+            size=size,
+            match_count=match_count,
+            truncated=truncated,
+            matches=matches,
+            content=content if include_content else None,
+        ))
 
-        if not list_only:
-            result.content = content
-
-        summary.results.append(result)
-        summary.files_scanned += 1
-
+    # Sort: successful hits first (by match count desc, then path), errored
+    # entries at the end. The renderer splits them into separate sections.
+    summary.results.sort(key=lambda r: (r.error is not None, -r.match_count, r.path))
     return summary
 
 
@@ -367,51 +389,63 @@ def scan(
 # Rendering
 # ---------------------------------------------------------------------------
 
-def render_text(summary: ScanSummary, show_content: bool) -> str:
+def render_text(summary: ScanSummary, show_matches: bool) -> str:
     out: list[str] = []
-    out.append(f"# file-scanner results")
-    out.append(f"root: {summary.root}")
-    out.append(f"files scanned: {summary.files_scanned}")
-    if summary.files_matched:
-        out.append(f"files matched: {summary.files_matched}")
-    out.append(f"bytes read:    {summary.bytes_read}")
+    out.append("# deep-grep results")
+    out.append(f"pattern: {summary.pattern!r}")
+    out.append(f"root:    {summary.root}")
+    out.append(f"files matched: {summary.files_matched} / {summary.files_scanned} scanned "
+               f"({summary.total_matches} total matches)")
     if summary.skipped_missing_deps:
         deps = ", ".join(f"{k} ({v})" for k, v in summary.skipped_missing_deps.items())
         out.append(f"skipped (missing optional deps): {deps}")
     out.append("")
 
-    for r in summary.results:
-        header = f"=== {r.path} [{r.kind}, {r.size} bytes"
-        if r.truncated:
-            header += ", truncated"
-        header += "] ==="
-        out.append(header)
-        if r.error:
-            out.append(f"  error: {r.error}")
-            out.append("")
-            continue
-        if r.matches:
+    hits = [r for r in summary.results if not r.error]
+    errored = [r for r in summary.results if r.error]
+
+    if not hits and not errored:
+        out.append("(no matches)")
+        return "\n".join(out)
+
+    if hits:
+        out.append("## Matched files")
+        path_width = max(len(r.path) for r in hits)
+        for r in hits:
+            tag = f" [{r.kind}]" if r.kind != "text" else ""
+            noun = "match" if r.match_count == 1 else "matches"
+            trunc = " (truncated)" if r.truncated else ""
+            out.append(f"  {r.path.ljust(path_width)}  {r.match_count:>4} {noun}{tag}{trunc}")
+
+    if errored:
+        out.append("")
+        out.append("## Skipped / errored")
+        for r in errored:
+            out.append(f"  {r.path}  — {r.error}")
+
+    if show_matches and hits:
+        out.append("")
+        out.append("## Match details")
+        for r in hits:
+            out.append(f"=== {r.path} ({r.match_count}) ===")
             for m in r.matches:
-                for b in m["before"]:
-                    out.append(f"  {m['line'] - len(m['before'])}- {b}")
-                out.append(f"  {m['line']}: {m['text']}")
-                for i, a in enumerate(m["after"], start=1):
-                    out.append(f"  {m['line'] + i}- {a}")
+                for i, b in enumerate(m.before):
+                    ln = m.line - len(m.before) + i
+                    out.append(f"  {ln:>5}- {b}")
+                out.append(f"  {m.line:>5}: {m.text}")
+                for i, a in enumerate(m.after, start=1):
+                    out.append(f"  {m.line + i:>5}- {a}")
                 out.append("")
-        elif show_content and r.content is not None:
-            out.append(r.content)
-            out.append("")
-        else:
-            out.append("")
     return "\n".join(out)
 
 
 def render_json(summary: ScanSummary) -> str:
     payload = {
+        "pattern": summary.pattern,
         "root": summary.root,
         "files_scanned": summary.files_scanned,
         "files_matched": summary.files_matched,
-        "bytes_read": summary.bytes_read,
+        "total_matches": summary.total_matches,
         "skipped_missing_deps": summary.skipped_missing_deps,
         "results": [asdict(r) for r in summary.results],
     }
@@ -448,32 +482,36 @@ def parse_ignores(raw: Optional[str]) -> set[str]:
 
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
-        prog="scan.py",
-        description="Recursively scan a workspace and extract text from files. "
-                    "Supports 60+ file types including .py, .md, .docx, .pdf, .pptx, .xlsx.",
+        prog="deep_grep.py",
+        description="Grep for a term across a workspace — including inside "
+                    ".docx, .pptx, .xlsx, and .pdf files. Returns a ranked "
+                    "list of files that contain the term.",
     )
+    p.add_argument("pattern",
+                   help="Regex (or literal string with -F) to search for.")
     p.add_argument("path", nargs="?", default=".",
                    help="Root directory to scan (default: current directory).")
     p.add_argument("--ext", default=None,
                    help="Comma-separated list of extensions to include "
-                        "(e.g. '.py,.md'). Defaults to 60+ built-in types.")
-    p.add_argument("--grep", default=None,
-                   help="Regex pattern to search for. Only files with matches "
-                        "will be returned.")
-    p.add_argument("--ignore-case", action="store_true",
-                   help="Case-insensitive grep.")
+                        "(e.g. '.py,.md,.docx'). Defaults to 60+ built-in types.")
+    p.add_argument("-F", "--fixed-string", action="store_true",
+                   help="Treat PATTERN as a literal string, not a regex.")
+    p.add_argument("-i", "--ignore-case", action="store_true",
+                   help="Case-insensitive match.")
+    p.add_argument("--show-matches", action="store_true",
+                   help="Include matched lines (with line numbers) in the output.")
     p.add_argument("--context", type=int, default=0,
-                   help="Lines of context around each grep match (default: 0).")
+                   help="Lines of context around each match (implies --show-matches).")
+    p.add_argument("--content", action="store_true",
+                   help="Also include the full extracted file content in JSON output.")
     p.add_argument("--max-bytes", type=int, default=200_000,
-                   help="Maximum bytes to read per file (default: 200000).")
+                   help="Maximum bytes read per file (default: 200000).")
     p.add_argument("--max-files", type=int, default=0,
                    help="Stop after scanning this many files (0 = no limit).")
     p.add_argument("--ignore", default=None,
                    help="Additional comma-separated directory names to skip.")
     p.add_argument("--include-hidden", action="store_true",
                    help="Include dotfiles and dot-directories.")
-    p.add_argument("--list-only", action="store_true",
-                   help="List matching files without emitting their content.")
     p.add_argument("--format", choices=("text", "json"), default="text",
                    help="Output format (default: text).")
     return p
@@ -493,33 +531,36 @@ def main(argv: Optional[list[str]] = None) -> int:
     extensions = parse_extensions(args.ext)
     ignore_dirs = parse_ignores(args.ignore)
 
-    grep_pat: Optional[re.Pattern] = None
-    if args.grep:
-        flags = re.IGNORECASE if args.ignore_case else 0
-        try:
-            grep_pat = re.compile(args.grep, flags)
-        except re.error as e:
-            print(f"error: invalid regex: {e}", file=sys.stderr)
-            return 2
+    flags = re.IGNORECASE if args.ignore_case else 0
+    raw_pattern = re.escape(args.pattern) if args.fixed_string else args.pattern
+    try:
+        pattern = re.compile(raw_pattern, flags)
+    except re.error as e:
+        print(f"error: invalid regex: {e}", file=sys.stderr)
+        return 2
+
+    show_matches = args.show_matches or args.context > 0
 
     summary = scan(
         root,
+        pattern,
         extensions=extensions,
         ignore_dirs=ignore_dirs,
-        grep=grep_pat,
         max_bytes=args.max_bytes,
         max_files=args.max_files,
         include_hidden=args.include_hidden,
-        list_only=args.list_only,
+        show_matches=show_matches,
+        include_content=args.content,
         context=args.context,
     )
 
     if args.format == "json":
         print(render_json(summary))
     else:
-        show_content = not args.list_only and grep_pat is None
-        print(render_text(summary, show_content=show_content))
-    return 0
+        print(render_text(summary, show_matches=show_matches))
+
+    # Exit code: 0 if anything matched, 1 if nothing matched (grep-style).
+    return 0 if summary.files_matched else 1
 
 
 if __name__ == "__main__":

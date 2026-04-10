@@ -38,7 +38,7 @@ SkillForge skills are designed to be agent-agnostic. They have been verified to 
 
 | Skill | Description | File Types |
 |-------|-------------|------------|
-| [file-scanner](skills/file-scanner/) | Recursively scan a workspace and extract text content from files | `.py`, `.sh`, `.md`, `.docx`, `.pdf`, `.pptx`, `.xlsx`, 60+ types |
+| [deep-grep](skills/deep-grep/) | Grep for a term across a workspace and return a ranked list of files that contain it — **including inside `.docx`, `.pptx`, `.xlsx`, and `.pdf`** where ordinary grep/rg are blind | `.py`, `.md`, `.docx`, `.pdf`, `.pptx`, `.xlsx`, 60+ types |
 
 More skills coming soon. Contributions welcome — see [CONTRIBUTING.md](CONTRIBUTING.md).
 
@@ -57,7 +57,7 @@ cd skills-library
 
 ```bash
 mkdir -p ~/.claude/skills
-cp -r skills/file-scanner ~/.claude/skills/
+cp -r skills/deep-grep ~/.claude/skills/
 ```
 
 Claude Code will auto-discover the skill on next launch.
@@ -71,9 +71,9 @@ Point the agent at the skill's script directly, or register the script as a cust
 {
   "customTools": [
     {
-      "name": "file-scanner",
-      "command": "python3 /absolute/path/to/skills-library/skills/file-scanner/scripts/scan.py",
-      "description": "Recursively scan and extract text from files in a directory"
+      "name": "deep-grep",
+      "command": "python3 /absolute/path/to/skills-library/skills/deep-grep/scripts/deep_grep.py",
+      "description": "Grep for a term across a workspace, including .docx/.pptx/.xlsx/.pdf. Returns a ranked list of files that contain the term."
     }
   ]
 }
@@ -84,28 +84,32 @@ Point the agent at the skill's script directly, or register the script as a cust
 Just invoke the script:
 
 ```bash
-python3 skills-library/skills/file-scanner/scripts/scan.py ./my-project
+python3 skills-library/skills/deep-grep/scripts/deep_grep.py "TODO" ./my-project
 ```
 
 ---
 
 ## Quick Start
 
-Scan the current directory for Python and Markdown files and print matches containing the word `TODO`:
+Find every file in the current directory that mentions `DATABASE_URL`:
 
 ```bash
-python3 skills/file-scanner/scripts/scan.py . \
-  --ext .py,.md \
-  --grep TODO
+python3 skills/deep-grep/scripts/deep_grep.py "DATABASE_URL" .
 ```
 
-Scan a docs folder including Word and PDF documents:
+Search a docs folder (including Word and PDF documents) for "quarterly revenue", case-insensitive:
 
 ```bash
-python3 skills/file-scanner/scripts/scan.py ./docs \
-  --ext .docx,.pdf,.md \
-  --max-bytes 200000 \
-  --format json
+pip install python-docx pypdf
+python3 skills/deep-grep/scripts/deep_grep.py "quarterly revenue" ./docs \
+  --ext .md,.docx,.pdf -i
+```
+
+TODO / FIXME hunt across a Python + TypeScript codebase with line-level context:
+
+```bash
+python3 skills/deep-grep/scripts/deep_grep.py "TODO|FIXME" ./src \
+  --ext .py,.ts --context 2
 ```
 
 See each skill's own `README.md` and `SKILL.md` for the full option list.
@@ -122,11 +126,11 @@ skills-library/
 ├── .gitignore
 ├── skills/                # The actual skills
 │   ├── README.md
-│   └── file-scanner/
+│   └── deep-grep/
 │       ├── SKILL.md
 │       ├── README.md
 │       └── scripts/
-│           └── scan.py
+│           └── deep_grep.py
 └── templates/             # Copy these when creating a new skill
     ├── SKILL_TEMPLATE.md
     └── README_TEMPLATE.md
