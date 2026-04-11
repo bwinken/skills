@@ -17,48 +17,17 @@ If `openpyxl` is missing, the skill doesn't crash — it prints a bilingual inst
 
 ---
 
-## Installation
-
-### Easiest — one-file installer
+## Install
 
 ```bash
-# macOS / Linux
-curl -fsSLO https://raw.githubusercontent.com/bwinken/skills/main/install.py
-python install.py            # interactive wizard
-
-# Windows (PowerShell)
-iwr https://raw.githubusercontent.com/bwinken/skills/main/install.py -OutFile install.py
+# Interactive wizard (recommended — picks agent + scope)
 python install.py
-```
 
-Non-interactive:
-
-```bash
+# Or directly
 python install.py install xlsx-reader --agent claude
 ```
 
-### Claude Code — plugin marketplace
-
-Install the whole `document-readers` suite:
-
-```text
-/plugin marketplace add bwinken/skills
-/plugin install document-readers@skills
-```
-
-Or just this one:
-
-```text
-/plugin install xlsx-reader@skills
-```
-
-### Manual install
-
-| Agent | Global | Workspace |
-|-------|--------|-----------|
-| Claude Code | `~/.claude/skills/xlsx-reader/` | `./.claude/skills/xlsx-reader/` |
-| Roo Code | `~/.roo/skills/xlsx-reader/` | `./.roo/skills/xlsx-reader/` |
-| Cline | `~/.cline/skills/xlsx-reader/` | `./.cline/skills/xlsx-reader/` |
+See the [root README](../../README.md#installation) for the full story: one-file installer without `git clone`, Claude Code plugin marketplace (`document-readers` bundle), Roo Code and Cline setup, workspace vs global scope, and manual install paths.
 
 ---
 

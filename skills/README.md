@@ -23,6 +23,14 @@ One skill per format — install them individually or all at once via the `docum
 
 Together these five skills cover the **文書工作 (office workflow)** core loop: **find** the right file with `document-search`, then **read** it with the appropriate reader. The LLM itself handles the analysis step on top of the extracted text.
 
+### `knowledge-tools` plugin
+
+Longer-lived knowledge management — turning sources into a structured, maintained wiki.
+
+| Skill | Description | Dependency |
+|-------|-------------|------------|
+| [llm-wiki](llm-wiki/) | Turn the agent into the maintainer of a personal wiki. Ships a schema, four workflows (init / ingest / query / lint), and three stdlib helper scripts. Inspired by [Andrej Karpathy's LLM wiki method](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f). | *(none — stdlib only)* |
+
 Want to contribute one? See [CONTRIBUTING.md](../CONTRIBUTING.md).
 
 ## Adding a new skill

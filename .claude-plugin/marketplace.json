@@ -29,6 +29,15 @@
         "./skills/xlsx-reader",
         "./skills/pptx-reader"
       ]
+    },
+    {
+      "name": "knowledge-tools",
+      "description": "Maintain a personal, LLM-curated knowledge base (wiki). The llm-wiki skill packages Karpathy's LLM-wiki method as a schema + workflows + helper scripts that let an agent consistently maintain a structured, long-lived notes folder.",
+      "source": "./",
+      "strict": false,
+      "skills": [
+        "./skills/llm-wiki"
+      ]
     }
   ]
 }

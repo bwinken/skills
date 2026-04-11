@@ -151,42 +151,16 @@ Results are always sorted by `match_count` descending so the most relevant files
 
 ## Requirements
 
-- Python **3.8+**
-- **Standard library only** for text / code files
-- **Optional** for Office / PDF: `python-docx`, `python-pptx`, `openpyxl`, `pypdf`. If missing, the skill does *not* crash — it skips the affected files and prints a bilingual install guide (with `HTTPS_PROXY` instructions for corporate networks).
+- Python 3.8+ — standard library only for text / code files
+- Optional for Office / PDF: `python-docx`, `python-pptx`, `openpyxl`, `pypdf`. Lazy-loaded; the skill skips affected files and prints a bilingual install guide if any are missing.
 
-## Integration
+## Installation
 
-All three supported agents (Claude Code, Roo Code, Cline) natively auto-discover skills from their standard folders — no manual registration.
+See the [root README](../../README.md#installation) — covers the one-file installer, Claude Code plugin marketplace, and manual install paths for Claude Code / Roo Code / Cline.
 
-### One-file installer (recommended)
+## Example with expected output
 
-```bash
-curl -fsSLO https://raw.githubusercontent.com/bwinken/skills/main/install.py
-python install.py                                       # interactive wizard
-python install.py install document-search --agent claude    # or roo, cline
-```
-
-### Claude Code — plugin marketplace (alternative)
-
-```text
-/plugin marketplace add bwinken/skills
-/plugin install document-search@skills
-```
-
-### Manual install
-
-Copy this skill folder into the agent's skills directory:
-
-| Agent | Global | Workspace |
-|-------|--------|-----------|
-| Claude Code | `~/.claude/skills/document-search/` | `./.claude/skills/document-search/` |
-| Roo Code | `~/.roo/skills/document-search/` | `./.roo/skills/document-search/` |
-| Cline | `~/.cline/skills/document-search/` | `./.cline/skills/document-search/` |
-
-## Examples
-
-### Example 1 — "which files mention `DATABASE_URL`?"
+The `## Usage` section above lists common invocations. Here is one end-to-end example so the agent knows what to expect back from the script:
 
 ```bash
 python3 scripts/document_search.py "DATABASE_URL" .
@@ -202,24 +176,4 @@ files matched: 3 / 214 scanned (7 total matches)
   config/settings.py       4 matches
   .env.example             2 matches
   README.md                1 match
-```
-
-### Example 2 — search a docs folder with mixed Office / PDF
-
-```bash
-pip install python-docx pypdf
-python3 scripts/document_search.py "Q4 roadmap" ./docs --ext .md,.docx,.pdf -i
-```
-
-### Example 3 — TODO hunt with context
-
-```bash
-python3 scripts/document_search.py "TODO|FIXME|XXX" ./src --ext .py,.ts --context 2
-```
-
-### Example 4 — JSON pipeline
-
-```bash
-python3 scripts/document_search.py "deprecated" . --format json \
-  | jq '.results[] | {path, match_count}'
 ```

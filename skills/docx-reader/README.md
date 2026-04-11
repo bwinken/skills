@@ -17,48 +17,17 @@ If `python-docx` is missing, the skill doesn't crash — it prints a bilingual i
 
 ---
 
-## Installation
-
-### Easiest — one-file installer
+## Install
 
 ```bash
-# macOS / Linux
-curl -fsSLO https://raw.githubusercontent.com/bwinken/skills/main/install.py
-python install.py            # interactive wizard
-
-# Windows (PowerShell)
-iwr https://raw.githubusercontent.com/bwinken/skills/main/install.py -OutFile install.py
+# Interactive wizard (recommended — picks agent + scope)
 python install.py
-```
 
-Non-interactive:
-
-```bash
+# Or directly
 python install.py install docx-reader --agent claude
 ```
 
-### Claude Code — plugin marketplace
-
-Install the whole `document-readers` suite:
-
-```text
-/plugin marketplace add bwinken/skills
-/plugin install document-readers@skills
-```
-
-Or just this one:
-
-```text
-/plugin install docx-reader@skills
-```
-
-### Manual install
-
-| Agent | Global | Workspace |
-|-------|--------|-----------|
-| Claude Code | `~/.claude/skills/docx-reader/` | `./.claude/skills/docx-reader/` |
-| Roo Code | `~/.roo/skills/docx-reader/` | `./.roo/skills/docx-reader/` |
-| Cline | `~/.cline/skills/docx-reader/` | `./.cline/skills/docx-reader/` |
+See the [root README](../../README.md#installation) for the full story: one-file installer without `git clone`, Claude Code plugin marketplace (`document-readers` bundle), Roo Code and Cline setup, workspace vs global scope, and manual install paths.
 
 ---
 

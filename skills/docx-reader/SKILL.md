@@ -105,40 +105,9 @@ Tables are flattened to `cell | cell | cell` rows so the LLM can still read them
 
 ## Requirements
 
-- Python **3.8+**
-- **`python-docx`** — `pip install python-docx`. If missing, the skill prints a bilingual (English / 中文) install guide with `HTTPS_PROXY` instructions and exits with code 2.
+- Python 3.8+
+- `python-docx` — lazy-loaded; the skill prints a bilingual install guide and exits with code 2 if missing
 
-## Integration
+## Installation
 
-All three supported agents (Claude Code, Roo Code, Cline) natively auto-discover this skill from their standard folders.
-
-### One-file installer
-
-```bash
-curl -fsSLO https://raw.githubusercontent.com/bwinken/skills/main/install.py
-python install.py                                    # interactive wizard
-python install.py install docx-reader --agent claude
-```
-
-### Claude Code — plugin marketplace
-
-Install the whole `document-readers` suite:
-
-```text
-/plugin marketplace add bwinken/skills
-/plugin install document-readers@skills
-```
-
-Or just this one:
-
-```text
-/plugin install docx-reader@skills
-```
-
-### Manual install
-
-| Agent | Global | Workspace |
-|-------|--------|-----------|
-| Claude Code | `~/.claude/skills/docx-reader/` | `./.claude/skills/docx-reader/` |
-| Roo Code | `~/.roo/skills/docx-reader/` | `./.roo/skills/docx-reader/` |
-| Cline | `~/.cline/skills/docx-reader/` | `./.cline/skills/docx-reader/` |
+See the [root README](../../README.md#installation) — covers the one-file installer, Claude Code plugin marketplace, and manual install paths for Claude Code / Roo Code / Cline.

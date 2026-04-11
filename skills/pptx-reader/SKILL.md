@@ -112,40 +112,9 @@ Agenda
 
 ## Requirements
 
-- Python **3.8+**
-- **`python-pptx`** — `pip install python-pptx`. If missing, the skill prints a bilingual (English / 中文) install guide and exits with code 2.
+- Python 3.8+
+- `python-pptx` — lazy-loaded; the skill prints a bilingual install guide and exits with code 2 if missing
 
-## Integration
+## Installation
 
-All three supported agents (Claude Code, Roo Code, Cline) natively auto-discover this skill from their standard folders.
-
-### One-file installer
-
-```bash
-curl -fsSLO https://raw.githubusercontent.com/bwinken/skills/main/install.py
-python install.py                                    # interactive wizard
-python install.py install pptx-reader --agent claude
-```
-
-### Claude Code — plugin marketplace
-
-Install the whole `document-readers` suite:
-
-```text
-/plugin marketplace add bwinken/skills
-/plugin install document-readers@skills
-```
-
-Or just this one:
-
-```text
-/plugin install pptx-reader@skills
-```
-
-### Manual install
-
-| Agent | Global | Workspace |
-|-------|--------|-----------|
-| Claude Code | `~/.claude/skills/pptx-reader/` | `./.claude/skills/pptx-reader/` |
-| Roo Code | `~/.roo/skills/pptx-reader/` | `./.roo/skills/pptx-reader/` |
-| Cline | `~/.cline/skills/pptx-reader/` | `./.cline/skills/pptx-reader/` |
+See the [root README](../../README.md#installation) — covers the one-file installer, Claude Code plugin marketplace, and manual install paths for Claude Code / Roo Code / Cline.

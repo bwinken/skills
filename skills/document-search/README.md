@@ -54,44 +54,17 @@ pip install python-docx python-pptx openpyxl pypdf
 
 ---
 
-## Installation
-
-Works with **Claude Code**, **Roo Code**, and **Cline** — all three natively auto-discover this skill from their standard folders.
-
-### Easiest — one-file installer
+## Install
 
 ```bash
-# macOS / Linux
-curl -fsSLO https://raw.githubusercontent.com/bwinken/skills/main/install.py
-python install.py            # interactive wizard
-
-# Windows (PowerShell)
-iwr https://raw.githubusercontent.com/bwinken/skills/main/install.py -OutFile install.py
+# Interactive wizard (recommended — picks agent + scope)
 python install.py
+
+# Or directly
+python install.py install document-search --agent claude
 ```
 
-Non-interactive variant:
-
-```bash
-python install.py install document-search --agent claude               # global
-python install.py install document-search --agent roo --scope workspace
-python install.py install document-search --agent cline
-```
-
-### Claude Code — plugin marketplace
-
-```text
-/plugin marketplace add bwinken/skills
-/plugin install document-search@skills
-```
-
-### Manual install
-
-| Agent | Global | Workspace |
-|-------|--------|-----------|
-| Claude Code | `~/.claude/skills/document-search/` | `./.claude/skills/document-search/` |
-| Roo Code | `~/.roo/skills/document-search/` | `./.roo/skills/document-search/` |
-| Cline | `~/.cline/skills/document-search/` | `./.cline/skills/document-search/` |
+See the [root README](../../README.md#installation) for the full story: one-file installer without `git clone`, Claude Code plugin marketplace, Roo Code and Cline setup, workspace vs global scope, and manual install paths.
 
 ---
 

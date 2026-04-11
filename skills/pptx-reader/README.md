@@ -17,48 +17,17 @@ If `python-pptx` is missing, the skill doesn't crash — it prints a bilingual i
 
 ---
 
-## Installation
-
-### Easiest — one-file installer
+## Install
 
 ```bash
-# macOS / Linux
-curl -fsSLO https://raw.githubusercontent.com/bwinken/skills/main/install.py
-python install.py            # interactive wizard
-
-# Windows (PowerShell)
-iwr https://raw.githubusercontent.com/bwinken/skills/main/install.py -OutFile install.py
+# Interactive wizard (recommended — picks agent + scope)
 python install.py
-```
 
-Non-interactive:
-
-```bash
+# Or directly
 python install.py install pptx-reader --agent claude
 ```
 
-### Claude Code — plugin marketplace
-
-Install the whole `document-readers` suite:
-
-```text
-/plugin marketplace add bwinken/skills
-/plugin install document-readers@skills
-```
-
-Or just this one:
-
-```text
-/plugin install pptx-reader@skills
-```
-
-### Manual install
-
-| Agent | Global | Workspace |
-|-------|--------|-----------|
-| Claude Code | `~/.claude/skills/pptx-reader/` | `./.claude/skills/pptx-reader/` |
-| Roo Code | `~/.roo/skills/pptx-reader/` | `./.roo/skills/pptx-reader/` |
-| Cline | `~/.cline/skills/pptx-reader/` | `./.cline/skills/pptx-reader/` |
+See the [root README](../../README.md#installation) for the full story: one-file installer without `git clone`, Claude Code plugin marketplace (`document-readers` bundle), Roo Code and Cline setup, workspace vs global scope, and manual install paths.
 
 ---
 
