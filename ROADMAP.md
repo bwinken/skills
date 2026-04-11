@@ -140,56 +140,25 @@ When adding anything from this roadmap, follow the rules we've committed to:
 
 ---
 
-### 4. Document organization skills — `document-archiver` (umbrella)
+### 4. ~~Document organization skills (4-skill cluster)~~ — **shipped** as a single skill
 
-**Status:** planned • **Plugin target:** new, `document-tools`
+**Status:** ✅ **shipped as [`document-organizer`](skills/document-organizer/)** (single skill, four modes) in the `document-organizer` plugin.
 
-**Why it exists:** The agent can already *read* documents. But when a user says *"my Downloads folder is a mess, sort it out"*, the agent needs actions: move files, rename them, find duplicates. These are deterministic file-system operations — perfect skill territory.
+**What happened:** The original plan was to ship four independent skills — `document-classifier`, `document-metadata-organizer`, `document-deduplicator`, `document-renamer`. During implementation the design collapsed into a **single skill with four modes** (`classify` / `by-metadata` / `dedup` / `rename`) because they all share the same safety infrastructure: scan → plan → execute → undo, dry-run by default, hard-banned paths, collision resolution, per-folder state file. Shipping as four skills would have meant copy-pasting that infrastructure four times under the `self-contained` rule, and making the agent pick between four nearly-identical SKILL.md files.
 
-**This is not one skill.** It's a cluster of 4 related but distinct operations. Each belongs in its own skill because they're triggered by different phrasings and have different risk profiles (renaming vs deleting duplicates are very different operations).
+**The unified skill ended up with:**
 
-#### 4a. `document-classifier`
-Sort files into subfolders by **content**. The skill itself only does the move; the **LLM provides the category label** (e.g. "this PDF looks like an invoice"). Interface: feed the skill a file → get back suggested categories (or pre-built categories: `invoice/`, `contract/`, `receipt/`, `report/`, `misc/`) → let the LLM decide → the skill executes the move.
+- **Four modes** (`--mode classify|by-metadata|dedup|rename`) dispatched by the same scan/plan/execute/undo subcommands
+- **Per-folder state file** `.document-organizer-rules.json` remembers category lists, group-by strategy, dedup match mode, rename template — written only by explicit `init-rules`, never auto-written
+- **Undo log** on every real execute, written to `<folder>/.document-organizer-undo/undo-<mode>-<timestamp>.json`
+- **Dry-run by default** — `execute` is a no-op unless `--execute` is passed explicitly
+- **Hard-banned paths** (filesystem root, `~`, `/etc`, `C:\Windows`, ...) plus soft-banned git repo roots (override with `--force-dangerous`)
+- **Collision resolution** via auto-appending ` (2)`, ` (3)`, ...
+- **Cross-device-move refused** for safety
+- **Never deletes** — dedup moves duplicates to `_duplicates/`, not the trash, not `rm`
+- **Pure stdlib** — no `pip install` anything
 
-**Key design**: the skill must be a **two-phase tool** — a "suggest" mode that returns candidates, and an "execute" mode that actually moves. Never delete, only move. Always print a dry-run summary first.
-
-**Trigger phrases:** "Organize my Downloads folder", "Sort these PDFs by type", "File these documents."
-
-#### 4b. `document-metadata-organizer`
-Sort files by **metadata only** — no LLM required. Modification date → `2026/04/`, extension → `pdfs/`, filename pattern → `reports/`. Fully deterministic, fast, safe.
-
-**Trigger phrases:** "Group these files by month", "Separate PDFs from Word docs", "Archive files older than a year."
-
-#### 4c. `document-deduplicator`
-Find and (optionally) remove duplicate files. Three levels:
-- **Level 1**: exact byte-level hash (SHA-256)
-- **Level 2**: same name, different path
-- **Level 3**: content similarity (Office/PDF extraction + fuzzy match) — **high-risk, require `--dry-run` by default**
-
-Always reports findings first; deletions require an explicit `--delete` flag.
-
-**Trigger phrases:** "Find duplicate PDFs in this folder", "Are there any copies of this file?", "Deduplicate my Downloads."
-
-#### 4d. `document-renamer`
-Rename files based on **extracted content**. For example, rename `Scan_0042.pdf` → `2026-03-15-invoice-acme.pdf` by:
-- Extracting date from PDF body or metadata
-- Extracting vendor/sender name (LLM decides from extracted text)
-- Assembling a structured filename `YYYY-MM-DD-<category>-<party>.pdf`
-
-Two-phase like the classifier: suggest → confirm → rename.
-
-**Trigger phrases:** "Rename these scans to something meaningful", "Give these files readable names."
-
-**Known challenges (whole cluster):**
-- **Destructive operations**: moving, renaming, deleting files is irreversible without backups. Every skill in this cluster must:
-  - Default to `--dry-run` (print what *would* happen, don't touch the filesystem)
-  - Require an explicit `--execute` flag to actually do anything
-  - Never use `--delete` as the default for the deduplicator; move to a `.trash/` subfolder unless user insists
-  - Refuse to operate on `/`, `~`, or the repo root as a safety check
-- **Path collisions**: when moving multiple files into a new folder, what if two have the same name? Append a counter, don't overwrite.
-- **LLM coupling**: the classifier and renamer rely on the LLM for decisions. The skill's job is to provide the **data** (extracted text, metadata, candidate categories) and **execute** the LLM's decision. Never bake category lists into the skill.
-
-**Future split risk:** **zero** — these are already split. The question is which to ship first. **Recommendation: start with `document-metadata-organizer`** because it's 100% deterministic and can ship without any LLM coupling or dangerous-operation guards. It's the lowest-risk way to build the "organize files" muscle.
+**Retrospective lesson for future skill clusters:** when a cluster of skills shares ≥60% of its infrastructure (safety, validation, state, undo), prefer a **single skill with modes** over N copy-pasted self-contained skills. The "one skill per filesystem action" split rule still stands — but `classify` / `by-metadata` / `dedup` / `rename` are all the same action (move-files-with-rules), just with different decision layers, so they belong together.
 
 ---
 
@@ -213,10 +182,11 @@ When you come back to this file and want to start something, these criteria help
 3. **Does the MVP fit in one script file?** If a skill needs multiple scripts to even get started, that's a sign the scope is too broad. Cut it down.
 4. **Can you test it without external state?** Skills that need a git repo, a network connection, or a large test corpus are harder to iterate on. Prefer skills that work against a single file or a small sample folder.
 
-Applying these criteria to the current list, the **easiest wins** are:
+Applying these criteria to what's left on the roadmap, the **easiest remaining wins** are:
 
-1. **`document-metadata-organizer`** — stdlib-only, deterministic, safe
-2. **`project-structure` layer 1** — stdlib-only, read-only, one file of logic
-3. **`document-analyzer` (PDF metadata feature)** — single sub-feature, one optional dep, no mutations
+1. **`project-structure` layer 1** — stdlib-only, read-only, one file of logic
+2. **`document-analyzer` (PDF metadata feature)** — single sub-feature, one optional dep, no mutations
 
-Do these three first, in any order. `code-review` and the content-based `document-classifier` / `document-renamer` come after because they involve more moving parts (subprocess orchestration or LLM coupling).
+Do these two in either order. `code-review` is the biggest remaining item because of the subprocess orchestration for linters/tests.
+
+The document-organization cluster is already shipped as `document-organizer` — see §4 for the retrospective on why it ended up as one skill instead of four.

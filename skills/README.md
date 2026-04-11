@@ -31,6 +31,14 @@ Longer-lived knowledge management — turning sources into a structured, maintai
 |-------|-------------|------------|
 | [llm-wiki](llm-wiki/) | Turn the agent into the maintainer of a personal wiki. Ships a schema, four workflows (init / ingest / query / lint), and three stdlib helper scripts. Inspired by [Andrej Karpathy's LLM wiki method](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f). | *(none — stdlib only)* |
 
+### `document-organizer` plugin
+
+Safe, destructive-aware folder organization.
+
+| Skill | Description | Dependency |
+|-------|-------------|------------|
+| [document-organizer](document-organizer/) | Four modes in one skill: **classify** by content, **by-metadata** (group by mtime/extension), **dedup** (find duplicates by hash), **rename** (batch-rename from content). Unified scan → plan → execute → undo pipeline, dry-run by default, per-folder state file, undo log on every real execute. | *(none — stdlib only)* |
+
 Want to contribute one? See [CONTRIBUTING.md](../CONTRIBUTING.md).
 
 ## Adding a new skill

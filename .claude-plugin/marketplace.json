@@ -38,6 +38,15 @@
       "skills": [
         "./skills/llm-wiki"
       ]
+    },
+    {
+      "name": "document-organizer",
+      "description": "Safely organize a folder of files — classify by content, group by mtime/extension, find duplicates, or batch-rename. Four modes, one skill, with a scan → plan → execute → undo pipeline that never mutates anything without dry-run review.",
+      "source": "./",
+      "strict": false,
+      "skills": [
+        "./skills/document-organizer"
+      ]
     }
   ]
 }

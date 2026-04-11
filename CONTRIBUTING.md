@@ -54,10 +54,25 @@ Every `SKILL.md` **must** contain:
 
 2. **An `## Overview` section** — a short paragraph describing the skill's purpose.
 3. **A `## When to use` section** — concrete trigger scenarios written for an LLM agent to recognize.
-4. **A `## Usage` section** — copy-pasteable command examples.
-5. **An `## Options` table** — every CLI flag, its default, and what it does.
-6. **An `## Output format` section** — describe (or show an example of) exactly what the skill returns.
-7. **An `## Integration` section** — a short note confirming the skill works with Claude Code / Roo Code / Cline (all three auto-discover skills from their standard folders, so usually just `install.py` is enough).
+4. **A `## When NOT to use` section** — cases where another skill or a built-in tool is a better fit. Just as important as "when to use" — it stops the LLM from over-firing.
+5. **A `## Requirements` section** — Python version + any optional packages (with the lazy-loading + bilingual install guide pattern).
+6. **An `## Installation` section** — exactly one line pointing at the root README:
+
+   ```markdown
+   ## Installation
+
+   See the [root README](../../README.md#installation) — covers the one-file installer, Claude Code plugin marketplace, and manual install paths for Claude Code / Roo Code / Cline.
+   ```
+
+   **Do not** copy install instructions into the SKILL.md. Agents read SKILL.md *after* the skill is installed; they don't need install steps.
+
+For **typical CLI tool skills** (deterministic scripts, like the readers, `document-search`, `document-organizer`), also add:
+
+7. **A `## Usage` section** — copy-pasteable command examples.
+8. **An `## Options` table** — every CLI flag, its default, and what it does.
+9. **An `## Output format` section** — describe (or show an example of) exactly what the skill returns.
+
+For **workflow-orchestration skills** (e.g. `llm-wiki`), the structure is different — the bulk of the document is the agent operating model + helper-script descriptions + critical rules. Look at [`skills/llm-wiki/SKILL.md`](skills/llm-wiki/SKILL.md) for a reference shape.
 
 The `description` field in frontmatter is the single most important piece of text in your skill: it's what an agent reads to decide whether to invoke the skill. Make it precise.
 
@@ -147,6 +162,74 @@ Then register your skill with a Claude Code plugin in [`.claude-plugin/marketpla
 2. **Add to an existing plugin** — if your skill is part of an existing themed group (e.g. a `document-skills` plugin), append `"./skills/<skill-name>"` to that plugin's `skills` array. This is exactly how the official `anthropics/skills` repo bundles `xlsx`, `docx`, `pptx`, and `pdf` into a single `document-skills` plugin.
 
 Plugin grouping is a pure marketplace-level concept — nothing changes on disk, and the same skill folder can even be referenced by multiple plugins if it makes sense.
+
+### Step 7 — If your skill is destructive, follow the safety conventions
+
+Most skills in this repo are read-only — they extract content, search, summarize, but never touch the filesystem in ways that lose data. **If your skill moves, renames, or deletes user files**, it falls into a different category and must follow these conventions, copied from [`document-organizer`](skills/document-organizer/) (the reference implementation):
+
+#### 7.1 Dry-run by default
+
+Any subcommand that mutates the filesystem must be a **no-op** unless the user passes an explicit `--execute` flag. Without `--execute`, the script prints what *would* happen and exits cleanly. This is the single most important safety rule — it means an agent can never accidentally destroy data by calling the wrong subcommand.
+
+```bash
+# Safe — prints a preview, touches nothing
+python my_skill.py do-something /tmp/folder
+
+# Dangerous — only this form actually mutates
+python my_skill.py do-something /tmp/folder --execute
+```
+
+#### 7.2 Write an undo log
+
+Every successful execute should write a structured undo log so the user (or a follow-up `undo` subcommand) can reverse the operation. Suggested location: `<target>/.<skill-name>-undo/undo-<op>-<YYYYMMDD-HHMMSS>.json`. The log should record every (source → destination) pair with absolute paths and a timestamp.
+
+Reference implementation: see `UndoLog` and `write_undo_log` in [`scripts/document_organizer.py`](skills/document-organizer/scripts/document_organizer.py).
+
+#### 7.3 Hard-banned target paths
+
+Refuse to operate on dangerous filesystem locations. **No `--force` escape hatch for these** — they're always wrong:
+
+- Filesystem root: `/`, `C:\`, `D:\`, ...
+- The user's `$HOME` itself (subfolders are fine)
+- Unix system folders: `/etc`, `/usr`, `/var`, `/bin`, `/sbin`, `/boot`, `/dev`, `/proc`, `/sys`, `/lib`, `/lib64`, `/tmp`
+- Windows system folders: `C:\Windows`, `C:\Program Files`, `C:\Program Files (x86)`, `C:\ProgramData`, `System Volume Information`, `$Recycle.Bin`
+
+Reference implementation: see `_HARD_BANNED_UNIX`, `_HARD_BANNED_WINDOWS_NAMES`, and `check_safety` in `document_organizer.py`.
+
+#### 7.4 Soft-banned with override
+
+Warn (and refuse by default) when the target looks like a version-controlled project root — it contains `.git/`, `pyproject.toml`, `package.json`, `Cargo.toml`, `go.mod`, etc. Provide a `--force-dangerous` flag to override, and require the agent to confirm with the user before passing it.
+
+#### 7.5 Refuse cross-device moves
+
+Don't move files across different drives (Windows) or different mount points / `st_dev` values (Unix). Cross-device moves are technically `copy + delete` under the hood and partial failures are catastrophic. Tell the user to move manually.
+
+#### 7.6 Validate every name the user controls
+
+Reject any "category" / "subfolder" / "new filename" string that contains:
+
+- Path separators (`/`, `\`)
+- `..` or `.` as the whole name
+- Leading `.` (avoids hidden-file tricks, except for explicitly allow-listed dotfolders)
+- Windows reserved names (`con`, `prn`, `aux`, `nul`, `com1`–`com9`, `lpt1`–`lpt9`)
+
+Reference implementation: see `validate_category_name` in `document_organizer.py`.
+
+#### 7.7 Resolve filename collisions instead of overwriting
+
+If a target file already exists, **never overwrite**. Auto-append ` (2)`, ` (3)`, ... before the extension until you find a free name. The user gets surprised once when they see the suffix; the user gets ruined once when their file is silently overwritten.
+
+#### 7.8 Never `rm`. Move to a sidecar instead.
+
+Even for deduplication or "trash" operations, **never call `os.remove` / `shutil.rmtree`** on user files. Always move to a designated sidecar folder (e.g. `_duplicates/`, `.trash/`) and let the user decide whether to delete. The skill is allowed to clean up its own scratch files (its own temp dirs, its own log files), but never the user's data.
+
+#### 7.9 Never auto-commit to git
+
+Even if the target folder is a git repo, the skill must not run `git add` / `git commit` automatically. Filesystem changes are the user's to commit.
+
+#### When in doubt, copy `document-organizer`
+
+If you're building a destructive skill and this list feels overwhelming: read [`scripts/document_organizer.py`](skills/document-organizer/scripts/document_organizer.py) start to finish. The "Safety module" and "Plan / Execute / Undo" sections show exactly how to apply every rule above. Copy the helpers (`check_safety`, `validate_category_name`, `_resolve_collision`, `UndoLog`) into your own skill's `scripts/` folder under the self-contained rule.
 
 ---
 

@@ -50,8 +50,9 @@ The current skills cover the **文書工作 (office workflow)** core loop: **fin
 | [xlsx-reader](skills/xlsx-reader/) | `document-readers` | Read an Excel file as GitHub-flavored markdown tables, one per sheet | `openpyxl` |
 | [pptx-reader](skills/pptx-reader/) | `document-readers` | Read a PowerPoint deck, with optional slide range (`--slides 1-5`) | `python-pptx` |
 | [llm-wiki](skills/llm-wiki/) | `knowledge-tools` | Maintain a personal, LLM-curated knowledge base: four workflows (init / ingest / query / lint), a Karpathy-inspired schema, and three stdlib helper scripts. Agent-orchestration style skill — heavy on docs, light on code. | *(none — stdlib only)* |
+| [document-organizer](skills/document-organizer/) | `document-organizer` | Safely organize a folder of files — **four modes in one skill**: classify by content, group by mtime/extension, find duplicates, or batch-rename. Unified scan → plan → execute → undo pipeline, dry-run by default, per-folder state file. | *(none — stdlib only)* |
 
-The `document-readers` plugin bundles all four readers together — install once, get support for PDF / Word / Excel / PowerPoint. Install them individually if you only need one format. The `knowledge-tools` plugin currently hosts `llm-wiki` and will grow as more knowledge-management skills come online.
+The `document-readers` plugin bundles all four readers together — install once, get support for PDF / Word / Excel / PowerPoint. Install them individually if you only need one format. The `knowledge-tools` plugin currently hosts `llm-wiki` and will grow as more knowledge-management skills come online. The `document-organizer` plugin is destructive-safe: every mode defaults to dry-run and writes an undo log on every real execute.
 
 More skills are planned — see [ROADMAP.md](ROADMAP.md) for the design notes on upcoming skills (`document-analyzer`, `project-structure`, `code-review`, and a cluster of document-organization skills). Contributions welcome — see [CONTRIBUTING.md](CONTRIBUTING.md).
 
