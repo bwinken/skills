@@ -21,7 +21,7 @@ One skill per format — install them individually or all at once via the `docum
 | [xlsx-reader](xlsx-reader/) | Extract Excel content as GitHub-flavored markdown tables, one per sheet. | `openpyxl` |
 | [pptx-reader](pptx-reader/) | Extract text from a PowerPoint deck, with optional slide-range selection (`--slides 1-5`). | `python-pptx` |
 
-Together these five skills cover the **文書工作 (office workflow)** core loop: **find** the right file with `document-search`, then **read** it with the appropriate reader. The LLM itself handles the analysis step on top of the extracted text.
+Together with `document-search` these five skills cover the **文書工作 (office workflow)** core loop: **find** the right file, then **read** it with the matching reader. Pair them with the `document-inspector` plugin (below) when you also need structural facts — metadata, tracked changes, form fields, formula dependencies.
 
 ### `knowledge-tools` plugin
 
@@ -38,6 +38,28 @@ Safe, destructive-aware folder organization.
 | Skill | Description | Dependency |
 |-------|-------------|------------|
 | [document-organizer](document-organizer/) | Four modes in one skill: **classify** by content, **by-metadata** (group by mtime/extension), **dedup** (find duplicates by hash), **rename** (batch-rename from content). Unified scan → plan → execute → undo pipeline, dry-run by default, per-folder state file, undo log on every real execute. | *(none — stdlib only)* |
+
+### `document-inspector` plugin
+
+Structural counterpart to `document-readers`: returns the deterministic facts an LLM can't derive from rendered text. One skill per format, bundled together.
+
+| Skill | Description | Dependency |
+|-------|-------------|------------|
+| [pdf-inspector](pdf-inspector/) | Inspect a PDF — metadata (title / author / dates / encryption / page size / PDF version) and AcroForm field inventory (names, types, values, required/read-only flags, signature fields). | `pypdf` |
+| [docx-inspector](docx-inspector/) | Inspect a Word document — core properties, **tracked changes** (every `w:ins` / `w:del` with author, timestamp, text), and heading-hierarchy outline with skipped-level detection. | `python-docx` |
+| [xlsx-inspector](xlsx-inspector/) | Inspect an Excel workbook — properties, per-sheet dimensions, **formula dependency graph** (cross-sheet references, formula density per sheet), and named-range inventory with scope. | `openpyxl` |
+
+The readers answer *"what does this document say?"*; the inspectors answer *"what are the facts about this document that the text itself can't tell you?"* — who wrote it, what forms it has, who tracked-changed what, which formulas flow across sheets, which named ranges exist. Install both plugins together to cover the full read-plus-inspect loop.
+
+### `code-tools` plugin
+
+Understanding codebases — the code-side equivalent of the document plugins.
+
+| Skill | Description | Dependency |
+|-------|-------------|------------|
+| [code-inspector](code-inspector/) | Map a codebase — **overview** tier (language + LOC breakdown, entry points, framework detection, test layout) **plus Python AST** tier (per-file classes with bases/methods/length, top-level functions with args and return annotations, imports with relative-depth, statement count, max nesting depth, `__main__` detection, aggregate totals, top-10 most-complex-files ranking). Gitignore-aware walk. Stdlib only; read-only. | *(none — stdlib only)* |
+
+Plans for a `code-review` skill (diff + linter orchestration) and non-Python AST via `tree-sitter-languages` live in [ROADMAP.md](../ROADMAP.md).
 
 Want to contribute one? See [CONTRIBUTING.md](../CONTRIBUTING.md).
 

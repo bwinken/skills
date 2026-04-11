@@ -25,45 +25,45 @@ When adding anything from this roadmap, follow the rules we've committed to:
 
 ## Planned skills
 
-### 1. `document-analyzer` — structured analysis of a single document
+### 1. ~~`document-analyzer`~~ → `document-inspector` plugin — shipped as **three sibling skills**
 
-**Status:** planned • **Plugin target:** new, `document-tools` (or fold into `document-readers`)
+**Status:** ✅ **shipped** as the `document-inspector` plugin, bundling three single-format skills:
 
-**Why not just use `*-reader`?** Readers return *text*. Analyzers return *structure* — things an LLM cannot reliably infer by eyeballing extracted text. The whole point of this skill is to do the deterministic, mechanical work that LLMs do badly, so the LLM can focus on interpretation.
-
-**Candidate sub-features** (pick one or more to MVP, not all at once):
-
-| Feature | Format | Why it's hard for the LLM |
+| Skill | Features | Dependency |
 |---|---|---|
-| Track changes / revision history extraction | `.docx` | `python-docx` exposes a raw XML tree; an LLM reading the rendered text has no way to see who changed what |
-| Cross-sheet formula dependency graph | `.xlsx` | Requires walking every cell's formula AST, resolving `Sheet1!A1` references across sheets |
-| PDF metadata + form-field inventory | `.pdf` | Author, creation date, encryption flags, fillable fields — all buried in the document catalog, invisible to text extraction |
-| Two-document diff (structured) | `.docx` / `.pdf` | Compare two versions of a contract; return a structured list of added/removed/modified clauses, not a character-level diff |
-| Structure validation | `.docx` | Check heading hierarchy (no H3 before H2), list indentation consistency, table schema |
+| [`pdf-inspector`](skills/pdf-inspector/) | `metadata` (title/author/dates/encryption/page size/PDF version), `forms` (AcroForm field inventory with types, values, required/read-only flags, signature fields) | `pypdf` |
+| [`docx-inspector`](skills/docx-inspector/) | `metadata` (core properties, word/paragraph/table counts), `changes` (tracked changes — who changed what, when, via raw `w:ins`/`w:del` XML walk), `structure` (heading-hierarchy outline with skipped-level detection) | `python-docx` |
+| [`xlsx-inspector`](skills/xlsx-inspector/) | `metadata` (properties + per-sheet dimensions/cell counts/merged ranges), `formulas` (regex-based dependency graph — cross-sheet references, per-sheet formula counts, sample formulas), `named-ranges` (full inventory with scope) | `openpyxl` |
 
-**When to use (trigger phrases):**
-- "What changed between v1 and v2 of this contract?"
-- "List all the tracked changes in `spec.docx`."
-- "Show me the formula dependencies in this Excel workbook."
-- "What forms does this PDF have, and what fields are fillable?"
+**Retrospective — why the design changed from one-skill-five-features to three-skills-per-format:**
 
-**Proposed scope for MVP:**
-- Pick **one** sub-feature to start. **Recommendation: PDF metadata + form-field inventory** — it's the most format-contained, no cross-file logic, and `pypdf` exposes everything needed.
-- CLI: `document_analyzer.py <file> --feature metadata|forms|diff|...`
-- Dispatch by feature flag, not by file extension — this skill *is* cross-format by design.
+The original MVP shipped as a single `document-analyzer` skill with a `--feature` flag that was supposed to grow sideways into DOCX / XLSX / etc. features over time. Two problems emerged:
 
-**Known challenges:**
-- **Scope creep**: "analyzer" is seductive. Resist doing general-purpose LLM-ready summarization — that's just a reader + LLM. Every feature must produce something the LLM *can't trivially derive from reader output*.
-- **Dependency sprawl**: each sub-feature may need its own optional lib. Keep them lazy.
-- **Format-specific analyzers may want their own skills eventually** (`pdf-analyzer`, `docx-analyzer`, ...). Start as one skill; split later if the CLI flag matrix gets unwieldy.
+1. **The name over-promised.** "Analyzer" reads as *semantic* analysis — finding totals, summarising content, answering questions about what's inside. The skill only ever did *structural* extraction (metadata, form fields). Users hit the name and expected the former; the skill delivered the latter. The fix is a more honest name: **inspector**, matching Word's "Document Inspector" vocabulary — "checking" not "understanding".
+2. **The single-skill-with-cross-format-features design violated this repo's own split rule.** The rule is *"operate on a single file → split one skill per format"*. PDF metadata extraction and XLSX formula parsing share roughly 5% of their code (argparse + `_preflight` + the renderer shell), so merging them into one skill only served the *name* — not any actual code reuse. Splitting into `pdf-inspector` / `docx-inspector` / `xlsx-inspector` makes each skill's SKILL.md, CLI, and test story dramatically simpler, and each skill's dependency (`pypdf` / `python-docx` / `openpyxl`) is loaded only when that skill runs.
 
-**Future split risk:** **high**. If MVP grows to 4+ feature flags × 4 formats, the "read vs search split rule" suggests splitting per format (since analyzing *a single file* is what this does). Keep an eye on the CLI complexity.
+**Why the plugin name is `document-inspector` (not `office-inspector` or similar):** the three skills share a concept — "get the structural facts around a document, not the content" — and that's what the plugin groups. `pptx-inspector` could be added later if someone needs slide-level metadata or speaker-notes inventory; nothing in the plugin shape prevents it.
+
+**Still open (for a later round):**
+
+- **Two-document structured diff** — compare v1 vs v2 of a contract and return a structured list of added/removed/modified clauses (not a character diff). The ROADMAP's split rule suggests this becomes its own `document-diff` skill, since it operates on multiple files.
+- **DOCX structure validation (deeper)** — current `structure` feature only checks heading hierarchy; the original plan also mentioned list indentation and table schema validation. Adding those is a good follow-up inside `docx-inspector`.
+- **PDF outline / bookmarks + annotations inventory** — `pypdf` exposes both via `reader.outline` and `page['/Annots']`. Natural additions inside `pdf-inspector` as `--feature outline` and `--feature annotations`.
+- **XLSX data-validation rules** — `openpyxl` exposes `ws.data_validations`, which is another thing rendered tables hide.
+
+**Retrospective lesson for future "umbrella" skill names:** the "analyzer" trap applies to any name whose scope is broader than the actual implementation. When the description paragraph starts with *"this skill does X"* and reality is *"this skill does X for PDF metadata"*, the name is wrong — either narrow it or broaden the implementation. In this case we narrowed it, because broadening (five features in one skill) violated the split rule.
 
 ---
 
-### 2. `project-structure` — map a codebase's architecture (with AST)
+### 2. ~~`project-structure`~~ → `code-inspector` — map a codebase's architecture (with AST)
 
-**Status:** planned • **Plugin target:** new, `code-tools`
+**Status:** ✅ **layer 1 + layer 2 shipped** as [`code-inspector`](skills/code-inspector/) in the `code-tools` plugin (renamed from `project-structure` when layer 2 landed, to match the `inspector` vocabulary used by the `document-inspector` plugin's per-format skills — "inspector" = structural checking, not semantic understanding). CLI uses `--feature overview|ast|all` dispatch, mirroring document-inspector's pattern. `--tree` stays as an orthogonal toggle.
+
+**What ships in layer 1 (`--feature overview`):** gitignore-aware walk, language + LOC breakdown (≈50 extensions mapped), entry points (`pyproject.toml`, `package.json`, `Cargo.toml`, `Dockerfile`, `main.py`, `index.ts`, ...), framework detection (Django / FastAPI / Flask / React / Next.js / Vue / Svelte / Angular / Express / NestJS / pytest / Jest / Vitest / Playwright / ...), test layout (directories, file globs, runner configs).
+
+**What ships in layer 2 (`--feature ast`, Python only):** per-file Python AST analysis via stdlib `ast` — classes (with bases rendered via `ast.unparse`, methods, length), top-level functions (arg count, async flag, return annotation, length), module-level imports (with relative-import depth), statement count, max nesting depth (walks `If`/`For`/`While`/`Try`/`With` blocks), `if __name__ == "__main__":` detection, aggregate totals, top-10 most-complex-files ranking by a rough proxy score. Files with syntax errors are recorded in `skipped` with their reason and never crash the run. Capped at `--max-ast-files` (default 500).
+
+**Layer 3 (non-Python AST via `tree-sitter-languages`)** is still open. The plan is to emit the same output shape for `.js` / `.ts` / `.go` / `.rs` / ... using prebuilt tree-sitter parsers (no C compiler needed). Lazy-loaded so layer 1 + layer 2 still work when the optional package is absent.
 
 **Why it exists:** When an agent joins a new codebase it wastes tokens doing `ls` / `cat` / grep to understand the shape. This skill produces a **structured, agent-ready map** of the project in one call: languages, entry points, module graph, classes/functions, import relationships.
 
@@ -92,28 +92,28 @@ When adding anything from this roadmap, follow the rules we've committed to:
 - "Which files define `UserService`?"
 
 **Proposed scope for MVP:**
-- Ship **layer 1** only. Pure stdlib, no optional deps. Output: JSON + human text.
-- Defer AST layers to a v2 — they're higher value but much more complex.
-- CLI: `project_structure.py <path> [--languages] [--entry-points] [--tree] [--format json|text]`
+- ~~Ship **layer 1** only. Pure stdlib, no optional deps.~~ ✅ done in the first round.
+- ~~Defer AST layers to a v2.~~ ✅ layer 2 (Python AST) shipped in the rename round. Still deferred: layer 3 (non-Python AST).
+- Final CLI: `code_inspector.py <path> [--feature overview|ast|all] [--tree] [--tree-depth N] [--max-files N] [--max-ast-files N] [--format text|json]`
 
-**Known challenges:**
-- **`tree-sitter-languages` has prebuilt wheels** for most platforms, but corporate proxies can block PyPI. Keep it behind `_preflight.require()` and make layer 1 (stdlib) always work.
-- **Static call graphs are unreliable** in dynamic languages (Python's monkey-patching, JS's runtime dispatch). Mark any call-graph output as "best effort" in the schema.
-- **Large monorepos** will produce huge outputs. Mandatory `--max-files` and per-directory summaries.
-- **gitignore parsing** is surprisingly annoying stdlib-only. We can shell out to `git ls-files` when a `.git/` is present, fall back to a hard-coded ignore list otherwise.
+**Known challenges (remaining):**
+- **`tree-sitter-languages` has prebuilt wheels** for most platforms, but corporate proxies can block PyPI. Keep it behind `_preflight.require()` so layer 1 + layer 2 stay usable when the optional package is absent.
+- **Static call graphs are unreliable** in dynamic languages (Python's monkey-patching, JS's runtime dispatch). The layer 2 implementation deliberately does NOT try to build a call graph for this reason — only per-file shape is extracted. If layer 3 ever wants cross-file resolution, mark it as "best effort" in the schema and expect false positives.
+- **Large monorepos** — handled via `--max-files`, `--max-depth`, and `--max-ast-files` caps.
+- **gitignore parsing** — handled via `git ls-files` when a `.git/` is present, hard-coded ignore fallback otherwise.
 
-**Future split risk:** **medium**. If the AST layer gets big it may want to be its own `code-ast` skill (single-file analysis), leaving `project-structure` as the folder-level skill. This fits the read-vs-search split rule cleanly: `project-structure` operates on a folder, `code-ast` operates on a single file.
+**Split rule retrospective:** the original plan floated splitting an eventual AST layer into its own `code-ast` skill. Layer 2 ended up inside `code-inspector` via `--feature ast` dispatch instead, because the AST output shares the walk infrastructure (gitignore handling, file enumeration, caps) with the overview tier. Splitting would have meant copy-pasting the walker, so the `--feature` approach is cleaner and matches the document-inspector pattern.
 
 ---
 
 ### 3. `code-review` — prepare structured review context for the LLM
 
-**Status:** planned • **Plugin target:** new, `code-tools` (same as `project-structure`)
+**Status:** planned • **Plugin target:** `code-tools` (same plugin as `code-inspector`)
 
 **Why it exists:** "AI code review" is usually just the agent reading the diff and commenting. That's slow and token-expensive. This skill does the **mechanical prep work** so the LLM can focus on semantic review:
 
 - Extract the diff (`git diff main...HEAD` or `git diff --staged`)
-- Identify which files / functions / classes changed (via AST; reuse `project-structure`'s AST logic — **duplicate the code**, don't import it; see self-contained rule)
+- Identify which files / functions / classes changed (via AST; reuse `code-inspector`'s AST logic — **duplicate the code**, don't import it; see self-contained rule)
 - Run linters on changed files: `ruff check --output-format json`, `pyright`, `eslint --format json`, `golangci-lint run --out-format json`, ...
 - Run tests if a test runner is detected and `--run-tests` is passed
 - Check coverage delta if coverage data exists
@@ -182,11 +182,21 @@ When you come back to this file and want to start something, these criteria help
 3. **Does the MVP fit in one script file?** If a skill needs multiple scripts to even get started, that's a sign the scope is too broad. Cut it down.
 4. **Can you test it without external state?** Skills that need a git repo, a network connection, or a large test corpus are harder to iterate on. Prefer skills that work against a single file or a small sample folder.
 
-Applying these criteria to what's left on the roadmap, the **easiest remaining wins** are:
+Applying these criteria, the shipped inspectors cover the easiest remaining wins:
 
-1. **`project-structure` layer 1** — stdlib-only, read-only, one file of logic
-2. **`document-analyzer` (PDF metadata feature)** — single sub-feature, one optional dep, no mutations
+1. ~~`project-structure` layer 1~~ — ✅ shipped, then renamed to `code-inspector`
+2. ~~`document-analyzer` (PDF metadata feature)~~ — ✅ shipped as `pdf-inspector`
+3. ~~`document-analyzer` DOCX track-changes~~ — ✅ shipped as `docx-inspector`
+4. ~~`document-analyzer` XLSX formula graph~~ — ✅ shipped as `xlsx-inspector`
+5. ~~`code-inspector` layer 2 (Python AST)~~ — ✅ shipped
 
-Do these two in either order. `code-review` is the biggest remaining item because of the subprocess orchestration for linters/tests.
+The remaining items are:
+
+- `code-review` (biggest; subprocess orchestration for linters/tests)
+- `code-inspector` layer 3 — non-Python AST via `tree-sitter-languages` (JavaScript / TypeScript / Go / Rust / ...)
+- Two-document structured diff (likely a new `document-diff` skill rather than a feature on any existing inspector)
+- PDF `outline` / `annotations` features for `pdf-inspector`
+- Deeper `docx-inspector` structure validation (list indentation, table schema)
+- `xlsx-inspector` data-validation rule inventory
 
 The document-organization cluster is already shipped as `document-organizer` — see §4 for the retrospective on why it ended up as one skill instead of four.

@@ -47,6 +47,26 @@
       "skills": [
         "./skills/document-organizer"
       ]
+    },
+    {
+      "name": "document-inspector",
+      "description": "Structural inspection of office documents — returns the deterministic facts an LLM cannot derive from extracted text. Three sibling skills, one per file type: pdf-inspector (metadata + AcroForm fields), docx-inspector (metadata + tracked changes + heading structure), xlsx-inspector (metadata + formula dependency graph + named ranges). Companion to the document-readers plugin — readers give you the text, inspectors give you the structure around it.",
+      "source": "./",
+      "strict": false,
+      "skills": [
+        "./skills/pdf-inspector",
+        "./skills/docx-inspector",
+        "./skills/xlsx-inspector"
+      ]
+    },
+    {
+      "name": "code-tools",
+      "description": "Tools for understanding and working with codebases. Currently ships code-inspector — stdlib-only, read-only, gitignore-aware folder map with two feature tiers: overview (languages, entry points, frameworks, test layout) and ast (per-file Python AST analysis: classes, top-level functions, imports, statement count, max nesting depth, most-complex-files ranking). Planned additions: non-Python AST via tree-sitter and a code-review skill for diff + linter orchestration.",
+      "source": "./",
+      "strict": false,
+      "skills": [
+        "./skills/code-inspector"
+      ]
     }
   ]
 }
