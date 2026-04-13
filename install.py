@@ -34,6 +34,7 @@ import os
 import platform
 import shutil
 import sys
+import time
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
@@ -185,6 +186,12 @@ def _extract_description(text: str) -> str:
 
 # --- remote source (GitHub Contents API) -----------------------------------
 
+# Retry transient failures (5xx, 408, 429, network errors) with exponential
+# backoff: 2s, 4s, 8s, 16s — matching the install.py network-retry policy.
+_RETRY_DELAYS = (2, 4, 8, 16)
+_RETRYABLE_STATUSES = frozenset({408, 429, 500, 502, 503, 504})
+
+
 def _gh_get(url: str) -> bytes:
     req = urllib.request.Request(
         url,
@@ -193,22 +200,52 @@ def _gh_get(url: str) -> bytes:
             "User-Agent": f"{REPO_OWNER}-skills-installer",
         },
     )
-    try:
-        with urllib.request.urlopen(req, timeout=30) as r:
-            return r.read()
-    except urllib.error.HTTPError as e:
-        if e.code == 403:
+    attempts = len(_RETRY_DELAYS) + 1
+    for attempt in range(1, attempts + 1):
+        try:
+            with urllib.request.urlopen(req, timeout=30) as r:
+                return r.read()
+        except urllib.error.HTTPError as e:
+            if e.code == 403:
+                raise SystemExit(
+                    "error: GitHub rate-limited this installer (HTTP 403). "
+                    "Wait a few minutes and retry, or clone the repo and run "
+                    "install.py from there."
+                )
+            if e.code in _RETRYABLE_STATUSES and attempt < attempts:
+                delay = _RETRY_DELAYS[attempt - 1]
+                print(
+                    f"  github returned HTTP {e.code}; retrying in {delay}s "
+                    f"(attempt {attempt}/{attempts - 1})...",
+                    file=sys.stderr,
+                )
+                time.sleep(delay)
+                continue
+            if e.code in _RETRYABLE_STATUSES:
+                raise SystemExit(
+                    f"error: GitHub request failed after {attempts} attempts "
+                    f"(HTTP {e.code} {e.reason}) — {url}. "
+                    "GitHub may be experiencing an outage; try again later, "
+                    "or clone the repo and run install.py from there."
+                )
+            raise SystemExit(f"error: GitHub request failed: {e} — {url}")
+        except urllib.error.URLError as e:
+            if attempt < attempts:
+                delay = _RETRY_DELAYS[attempt - 1]
+                print(
+                    f"  network error ({e.reason}); retrying in {delay}s "
+                    f"(attempt {attempt}/{attempts - 1})...",
+                    file=sys.stderr,
+                )
+                time.sleep(delay)
+                continue
             raise SystemExit(
-                "error: GitHub rate-limited this installer (HTTP 403). "
-                "Wait a few minutes and retry, or clone the repo and run "
-                "install.py from there."
+                f"error: could not reach github.com ({e.reason}) after "
+                f"{attempts} attempts. Check your network / HTTPS_PROXY "
+                "and retry."
             )
-        raise SystemExit(f"error: GitHub request failed: {e} — {url}")
-    except urllib.error.URLError as e:
-        raise SystemExit(
-            f"error: could not reach github.com ({e.reason}). "
-            "Check your network / HTTPS_PROXY and retry."
-        )
+    # Unreachable: loop always returns or raises.
+    raise SystemExit("error: unreachable in _gh_get retry loop")
 
 
 def _gh_list_dir(path: str) -> list[dict]:
