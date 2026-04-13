@@ -33,6 +33,7 @@ import json
 import os
 import platform
 import shutil
+import ssl
 import sys
 import time
 import urllib.error
@@ -192,6 +193,20 @@ def _extract_description(text: str) -> str:
 _RETRY_DELAYS = (2, 4, 8, 16)
 _RETRYABLE_STATUSES = frozenset({408, 429, 500, 502, 503, 504})
 
+# --insecure / SKILLS_INSTALLER_INSECURE=1 disables TLS verification for
+# corporate environments that intercept HTTPS with a self-signed CA. It's the
+# moral equivalent of pip's `--trusted-host` flag. Off by default.
+_INSECURE_TLS: bool = os.environ.get("SKILLS_INSTALLER_INSECURE", "") not in ("", "0")
+
+
+def _ssl_context() -> Optional[ssl.SSLContext]:
+    if not _INSECURE_TLS:
+        return None
+    ctx = ssl.create_default_context()
+    ctx.check_hostname = False
+    ctx.verify_mode = ssl.CERT_NONE
+    return ctx
+
 
 def _gh_get(url: str) -> bytes:
     req = urllib.request.Request(
@@ -202,9 +217,10 @@ def _gh_get(url: str) -> bytes:
         },
     )
     attempts = len(_RETRY_DELAYS) + 1
+    ctx = _ssl_context()
     for attempt in range(1, attempts + 1):
         try:
-            with urllib.request.urlopen(req, timeout=30) as r:
+            with urllib.request.urlopen(req, timeout=30, context=ctx) as r:
                 return r.read()
         except urllib.error.HTTPError as e:
             if e.code == 403:
@@ -742,6 +758,14 @@ def build_parser() -> argparse.ArgumentParser:
         description="Skills cross-platform installer (zero dependencies). "
                     "Run with no arguments for the interactive wizard.",
     )
+    # Top-level flag so it works in wizard mode AND with every subcommand.
+    p.add_argument(
+        "--insecure",
+        action="store_true",
+        help="Skip TLS certificate verification (for corporate proxies "
+             "with TLS interception). Equivalent to pip's --trusted-host. "
+             "You can also set SKILLS_INSTALLER_INSECURE=1.",
+    )
     sub = p.add_subparsers(dest="command")
 
     sub.add_parser("list", help="List skills available in this repo / remote.")
@@ -778,6 +802,22 @@ def main(argv: Optional[list[str]] = None) -> int:
             pass
 
     args = build_parser().parse_args(argv)
+
+    # Apply --insecure (or SKILLS_INSTALLER_INSECURE=1) globally so every
+    # HTTPS call — tarball, Contents API, raw files — uses the same context.
+    global _INSECURE_TLS
+    if args.insecure:
+        _INSECURE_TLS = True
+    if _INSECURE_TLS:
+        print(
+            "warning: TLS verification disabled (--insecure). "
+            "Only use on trusted corporate networks.",
+            file=sys.stderr,
+        )
+
+    proxy = os.environ.get("HTTPS_PROXY") or os.environ.get("HTTP_PROXY")
+    if proxy:
+        print(f"using proxy: {proxy}", file=sys.stderr)
 
     if args.command is None:
         return cmd_wizard(args)
