@@ -396,6 +396,24 @@ def skill_exists(name: str) -> bool:
     return any(s.name == name for s in list_skills())
 
 
+def _scan_installed(target_root: Path) -> set[str]:
+    """Return names of skills currently installed under `target_root`.
+
+    A directory counts as an installed skill if it contains SKILL.md and
+    its name doesn't start with '_' (matching the same rules as the
+    local/tarball listers).
+    """
+    if not target_root.is_dir():
+        return set()
+    out: set[str] = set()
+    for p in target_root.iterdir():
+        if not p.is_dir() or p.name.startswith("_"):
+            continue
+        if (p / "SKILL.md").exists():
+            out.add(p.name)
+    return out
+
+
 # ---------------------------------------------------------------------------
 # Install / uninstall
 # ---------------------------------------------------------------------------
@@ -587,13 +605,21 @@ def _pick_numbered(title: str, options: list[tuple[str, str]]) -> int:
         print(f"please enter a number between 1 and {len(options)}.")
 
 
-def _pick_multi(title: str, skills: list[SkillInfo]) -> list[str]:
+def _pick_multi(
+    title: str,
+    skills: list[SkillInfo],
+    *,
+    initial_selected: Optional[set[int]] = None,
+) -> list[str]:
     """
     Let the user toggle a multi-select list.
     Input: space-separated numbers (e.g. '1 3'), 'a' = all, '' (enter) = confirm.
     Returns selected skill names, in the original order.
     """
-    selected: set[int] = set(range(len(skills)))  # default: all selected
+    if initial_selected is None:
+        selected: set[int] = set(range(len(skills)))  # default: all selected
+    else:
+        selected = set(initial_selected)
 
     while True:
         print(title)
@@ -845,11 +871,19 @@ def _render_multi(
     return lines
 
 
-def _menu_multi(title: str, items: list[SkillInfo]) -> list[str]:
+def _menu_multi(
+    title: str,
+    items: list[SkillInfo],
+    *,
+    initial_selected: Optional[set[int]] = None,
+) -> list[str]:
     if not _supports_arrow_menus():
-        return _pick_multi(title, items)
+        return _pick_multi(title, items, initial_selected=initial_selected)
     cursor = 0
-    selected: set[int] = set(range(len(items)))  # default: all selected
+    if initial_selected is None:
+        selected: set[int] = set(range(len(items)))  # default: all selected
+    else:
+        selected = set(initial_selected)
     lines = _render_multi(title, items, cursor, selected)
     try:
         while True:
@@ -922,30 +956,95 @@ def cmd_wizard(_args: Optional[argparse.Namespace] = None) -> int:
     scope = "global" if scope_idx == 0 else "workspace"
     print()
 
-    # Step 3: skills
+    # Step 3: list available skills, detect what's already installed, and
+    # let the user toggle in one unified multi-select.
+    #
+    # The selection drives three kinds of actions on confirm:
+    #   - checked & not installed           -> install
+    #   - checked & already installed       -> update (reinstall from source)
+    #   - unchecked & was installed         -> uninstall
+    target_root = resolve_target(agent_key, scope)
+    installed = _scan_installed(target_root)
+
     print("fetching available skills...")
     try:
-        skills = list_skills()
+        available = list_skills()
     except SystemExit as e:
         print(f"{e}", file=sys.stderr)
-        return 1
-    if not skills:
-        print("no skills found — nothing to install.")
-        return 1
-    print(f"found {len(skills)} skill(s).")
-    print()
+        # Even if the fetch fails, we may still have installed skills to
+        # manage (uninstall). Only give up if nothing's around.
+        if not installed:
+            return 1
+        available = []
 
-    chosen = _menu_multi(
-        "Step 3/3 — Which skills do you want to install?",
-        skills,
+    avail_map: dict[str, SkillInfo] = {s.name: s for s in available}
+    all_names = sorted(set(avail_map.keys()) | installed)
+    if not all_names:
+        print("no skills available and none installed — nothing to do.")
+        return 0
+
+    # Build menu entries: each row gets a status badge so the user can see
+    # what's installed, what's new, and what's an orphan (installed but the
+    # upstream source is gone).
+    entries: list[SkillInfo] = []
+    initial_selected: set[int] = set()
+    for i, name in enumerate(all_names):
+        info = avail_map.get(name)
+        desc = info.description if info else ""
+        if name in installed and info is not None:
+            badge = "[installed]"
+            initial_selected.add(i)
+        elif name in installed:
+            badge = "[installed · no source]"
+            initial_selected.add(i)
+        else:
+            badge = "[new]"
+        label_desc = f"{badge} {desc}".strip()
+        entries.append(SkillInfo(name=name, description=label_desc))
+
+    print(
+        f"found {len(avail_map)} available skill(s), "
+        f"{len(installed)} already installed at {target_root}"
     )
     print()
 
+    chosen = _menu_multi(
+        "Step 3/3 — Toggle skills to install / update / remove:",
+        entries,
+        initial_selected=initial_selected,
+    )
+    chosen_set = set(chosen)
+    print()
+
+    # Classify the diff.
+    to_install = sorted(chosen_set - installed)
+    to_uninstall = sorted(installed - chosen_set)
+    kept = chosen_set & installed
+    to_update = sorted(n for n in kept if n in avail_map)
+    kept_orphans = sorted(n for n in kept if n not in avail_map)
+
+    if not (to_install or to_update or to_uninstall):
+        print("no changes requested — nothing to do.")
+        return 0
+
     # Summary + confirmation
-    target_root = resolve_target(agent_key, scope)
-    print("About to install:")
-    for name in chosen:
-        print(f"  • {name}  →  {target_root / name}")
+    print("About to apply:")
+    if to_install:
+        print(f"  + install   ({len(to_install)}):")
+        for n in to_install:
+            print(f"      {n}  →  {target_root / n}")
+    if to_update:
+        print(f"  ↻ update    ({len(to_update)}):")
+        for n in to_update:
+            print(f"      {n}  →  {target_root / n}")
+    if to_uninstall:
+        print(f"  - uninstall ({len(to_uninstall)}):")
+        for n in to_uninstall:
+            print(f"      {n}  →  {target_root / n}")
+    if kept_orphans:
+        print(f"  = keep as-is (no upstream source) ({len(kept_orphans)}):")
+        for n in kept_orphans:
+            print(f"      {n}")
     print()
     confirm = _prompt("Proceed? [Y/n] ").lower()
     if confirm not in ("", "y", "yes"):
@@ -953,23 +1052,39 @@ def cmd_wizard(_args: Optional[argparse.Namespace] = None) -> int:
         return 1
     print()
 
-    # Install each skill
+    # Execute: remove first (frees any locked paths), then install+update.
     failures: list[str] = []
-    for name in chosen:
+
+    for name in to_uninstall:
         dst = target_root / name
-        print(f"installing {name} → {dst}")
+        print(f"uninstalling {name} → {dst}")
+        try:
+            if dst.exists():
+                shutil.rmtree(dst)
+            print("  ✓ removed")
+        except OSError as e:
+            print(f"  ✗ failed: {e}", file=sys.stderr)
+            failures.append(name)
+
+    # install_skill overwrites existing dirs, so update = reinstall.
+    for name in sorted(to_install + to_update):
+        dst = target_root / name
+        action = "updating" if name in installed else "installing"
+        print(f"{action} {name} → {dst}")
         try:
             install_skill(name, dst, dry_run=False)
+            print("  ✓ done")
         except (OSError, SystemExit) as e:
             print(f"  ✗ failed: {e}", file=sys.stderr)
             failures.append(name)
-            continue
-        print("  ✓ done")
 
-    # Post-install hints (once, based on the agent/scope the user picked)
-    if chosen and not failures:
+    # Post-install hint (pick any installed/updated skill as the sample)
+    sample_name = next(iter(to_install + to_update), None)
+    if sample_name is not None and sample_name not in failures:
         print()
-        _print_post_install_hint(agent_key, scope, target_root / chosen[0], chosen[0])
+        _print_post_install_hint(
+            agent_key, scope, target_root / sample_name, sample_name
+        )
 
     if failures:
         print()
