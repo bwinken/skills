@@ -145,11 +145,12 @@ class SkillInfo:
 
 # --- local source ----------------------------------------------------------
 
-def _local_list_skills() -> list[SkillInfo]:
-    if not LOCAL_SKILLS_DIR.is_dir():
+def _local_list_skills(root: Optional[Path] = None) -> list[SkillInfo]:
+    root = root if root is not None else LOCAL_SKILLS_DIR
+    if not root.is_dir():
         return []
     out: list[SkillInfo] = []
-    for p in sorted(LOCAL_SKILLS_DIR.iterdir()):
+    for p in sorted(root.iterdir()):
         if not p.is_dir() or p.name.startswith("_"):
             continue
         if not (p / "SKILL.md").exists():
@@ -290,9 +291,88 @@ def _remote_list_skills() -> list[SkillInfo]:
     return sorted(out, key=lambda s: s.name)
 
 
+# --- tarball source (codeload.github.com) ----------------------------------
+#
+# The per-file GitHub Contents API is rate-limited and flaky: a single
+# 503 on /repos/.../contents breaks the wizard mid-step. codeload.github.com
+# serves the full repo as a tarball in one request and runs on separate
+# infrastructure — so we prefer it, and fall back to the Contents API only
+# if the tarball download fails.
+
+_REMOTE_TARBALL_CACHE: Optional[Path] = None
+_REMOTE_TARBALL_ATTEMPTED = False
+
+
+def _ensure_tarball() -> Optional[Path]:
+    """Download + extract the repo tarball once. Returns the skills/ dir or None."""
+    global _REMOTE_TARBALL_CACHE, _REMOTE_TARBALL_ATTEMPTED
+    if _REMOTE_TARBALL_ATTEMPTED:
+        return _REMOTE_TARBALL_CACHE
+    _REMOTE_TARBALL_ATTEMPTED = True
+    _REMOTE_TARBALL_CACHE = _try_fetch_tarball()
+    return _REMOTE_TARBALL_CACHE
+
+
+def _try_fetch_tarball() -> Optional[Path]:
+    import io
+    import tarfile
+    import tempfile
+
+    url = (
+        f"https://codeload.github.com/{REPO_OWNER}/{REPO_NAME}"
+        f"/tar.gz/refs/heads/{REPO_BRANCH}"
+    )
+    print(
+        f"  downloading repo tarball from codeload.github.com "
+        f"({REPO_BRANCH})...",
+        file=sys.stderr,
+    )
+    try:
+        data = _gh_get(url)
+    except SystemExit as e:
+        print(f"  tarball download failed: {e}", file=sys.stderr)
+        return None
+
+    tmpdir = Path(tempfile.mkdtemp(prefix="skills-installer-"))
+    try:
+        with tarfile.open(fileobj=io.BytesIO(data), mode="r:gz") as tf:
+            safe: list = []
+            for m in tf.getmembers():
+                # Reject absolute paths and parent-traversal entries.
+                if m.name.startswith("/") or ".." in Path(m.name).parts:
+                    print(
+                        f"  unsafe tarball entry rejected: {m.name}",
+                        file=sys.stderr,
+                    )
+                    return None
+                # Skip symlinks, hardlinks, devices; keep regular files + dirs.
+                if not (m.isfile() or m.isdir()):
+                    continue
+                safe.append(m)
+            tf.extractall(tmpdir, members=safe)
+    except (OSError, tarfile.TarError) as e:
+        print(f"  tarball extraction failed: {e}", file=sys.stderr)
+        return None
+
+    # Tarball top-level is "<repo>-<branch>/"; find it and return its skills/.
+    for child in tmpdir.iterdir():
+        if child.is_dir():
+            skills_dir = child / "skills"
+            if skills_dir.is_dir():
+                return skills_dir
+    print(
+        "  tarball did not contain a skills/ directory",
+        file=sys.stderr,
+    )
+    return None
+
+
 def list_skills() -> list[SkillInfo]:
     if is_local_mode():
         return _local_list_skills()
+    tarball_dir = _ensure_tarball()
+    if tarball_dir is not None:
+        return _local_list_skills(tarball_dir)
     return _remote_list_skills()
 
 
@@ -329,20 +409,35 @@ def _remote_download_tree(repo_path: str, dst: Path) -> None:
 
 
 def install_skill(skill_name: str, target: Path, *, dry_run: bool) -> None:
-    """Copy (local) or download (remote) the skill into `target`."""
+    """Copy (local / tarball) or download (Contents API) the skill into `target`."""
     if dry_run:
         return
     target.parent.mkdir(parents=True, exist_ok=True)
     if target.exists():
         shutil.rmtree(target)
+
+    # Source 1: cloned repo next to install.py
     if is_local_mode():
         src = LOCAL_SKILLS_DIR / skill_name
         if not src.is_dir() or not (src / "SKILL.md").exists():
             raise SystemExit(f"error: local skill not found: {src}")
         shutil.copytree(src, target)
-    else:
-        print(f"  fetching from github.com/{REPO_OWNER}/{REPO_NAME}...")
-        _remote_download_tree(f"skills/{skill_name}", target)
+        return
+
+    # Source 2: tarball fetched once from codeload.github.com
+    tarball_dir = _ensure_tarball()
+    if tarball_dir is not None:
+        src = tarball_dir / skill_name
+        if not src.is_dir() or not (src / "SKILL.md").exists():
+            raise SystemExit(
+                f"error: skill not found in tarball: {skill_name}"
+            )
+        shutil.copytree(src, target)
+        return
+
+    # Source 3: fall back to the GitHub Contents API (per-file downloads)
+    print(f"  fetching from github.com/{REPO_OWNER}/{REPO_NAME}...")
+    _remote_download_tree(f"skills/{skill_name}", target)
 
 
 # ---------------------------------------------------------------------------
