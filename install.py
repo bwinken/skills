@@ -396,6 +396,24 @@ def skill_exists(name: str) -> bool:
     return any(s.name == name for s in list_skills())
 
 
+def _scan_installed(target_root: Path) -> set[str]:
+    """Return names of skills currently installed under `target_root`.
+
+    A directory counts as an installed skill if it contains SKILL.md and
+    its name doesn't start with '_' (matching the same rules as the
+    local/tarball listers).
+    """
+    if not target_root.is_dir():
+        return set()
+    out: set[str] = set()
+    for p in target_root.iterdir():
+        if not p.is_dir() or p.name.startswith("_"):
+            continue
+        if (p / "SKILL.md").exists():
+            out.add(p.name)
+    return out
+
+
 # ---------------------------------------------------------------------------
 # Install / uninstall
 # ---------------------------------------------------------------------------
@@ -587,13 +605,21 @@ def _pick_numbered(title: str, options: list[tuple[str, str]]) -> int:
         print(f"please enter a number between 1 and {len(options)}.")
 
 
-def _pick_multi(title: str, skills: list[SkillInfo]) -> list[str]:
+def _pick_multi(
+    title: str,
+    skills: list[SkillInfo],
+    *,
+    initial_selected: Optional[set[int]] = None,
+) -> list[str]:
     """
     Let the user toggle a multi-select list.
     Input: space-separated numbers (e.g. '1 3'), 'a' = all, '' (enter) = confirm.
     Returns selected skill names, in the original order.
     """
-    selected: set[int] = set(range(len(skills)))  # default: all selected
+    if initial_selected is None:
+        selected: set[int] = set(range(len(skills)))  # default: all selected
+    else:
+        selected = set(initial_selected)
 
     while True:
         print(title)
@@ -637,6 +663,268 @@ def _pick_multi(title: str, skills: list[SkillInfo]) -> list[str]:
                 selected.add(t)
 
 
+# ---------------------------------------------------------------------------
+# TUI primitives: arrow-key menus, zero dependencies
+# ---------------------------------------------------------------------------
+#
+# Cross-platform raw key reading using only the stdlib:
+#   - Windows:   msvcrt.getwch()           (stdlib, always available on Windows)
+#   - Unix/mac:  termios + tty.setraw()    (stdlib, always available on POSIX)
+#
+# If we can't get a real TTY (piped stdin, CI, etc.), we transparently fall
+# back to the legacy number-picker so every non-interactive workflow still
+# works exactly as before.
+
+def _is_tty() -> bool:
+    try:
+        return bool(sys.stdin.isatty() and sys.stdout.isatty())
+    except (AttributeError, ValueError):
+        return False
+
+
+def _enable_vt_windows() -> bool:
+    """Turn on ANSI escape processing in the Windows console. No-op elsewhere."""
+    if os.name != "nt":
+        return True
+    try:
+        import ctypes
+        kernel32 = ctypes.windll.kernel32  # type: ignore[attr-defined]
+        handle = kernel32.GetStdHandle(-11)  # STD_OUTPUT_HANDLE
+        mode = ctypes.c_uint32()
+        if not kernel32.GetConsoleMode(handle, ctypes.byref(mode)):
+            return False
+        ENABLE_VIRTUAL_TERMINAL_PROCESSING = 0x0004
+        return bool(kernel32.SetConsoleMode(
+            handle, mode.value | ENABLE_VIRTUAL_TERMINAL_PROCESSING
+        ))
+    except Exception:
+        return False
+
+
+def _supports_arrow_menus() -> bool:
+    if not _is_tty():
+        return False
+    if os.name == "nt":
+        return _enable_vt_windows()
+    return True
+
+
+def _read_key() -> str:
+    """Read one keypress and return a normalized name.
+
+    Returns one of: 'up', 'down', 'left', 'right', 'enter', 'space',
+    'esc', 'home', 'end', 'pageup', 'pagedown', a lowercase character,
+    or 'other' for anything we don't recognize.
+    """
+    if os.name == "nt":
+        import msvcrt
+        ch = msvcrt.getwch()
+        if ch in ("\x00", "\xe0"):
+            ch2 = msvcrt.getwch()
+            return {
+                "H": "up", "P": "down", "K": "left", "M": "right",
+                "G": "home", "O": "end", "I": "pageup", "Q": "pagedown",
+            }.get(ch2, "other")
+        if ch == "\r":
+            return "enter"
+        if ch == "\x1b":
+            return "esc"
+        if ch == " ":
+            return "space"
+        if ch == "\x03":
+            raise KeyboardInterrupt
+        return ch.lower()
+
+    import select
+    import termios
+    import tty
+    fd = sys.stdin.fileno()
+    old = termios.tcgetattr(fd)
+    try:
+        tty.setraw(fd)
+        ch = sys.stdin.read(1)
+        if ch == "\x1b":
+            # Could be a bare ESC or the start of a CSI sequence (arrow keys).
+            if select.select([sys.stdin], [], [], 0.01)[0]:
+                ch2 = sys.stdin.read(1)
+                if ch2 == "[":
+                    ch3 = sys.stdin.read(1)
+                    return {
+                        "A": "up", "B": "down",
+                        "C": "right", "D": "left",
+                        "H": "home", "F": "end",
+                    }.get(ch3, "other")
+            return "esc"
+        if ch in ("\r", "\n"):
+            return "enter"
+        if ch == " ":
+            return "space"
+        if ch == "\x03":
+            raise KeyboardInterrupt
+        return ch.lower()
+    finally:
+        termios.tcsetattr(fd, termios.TCSADRAIN, old)
+
+
+# ANSI escape helpers. `_CLR_DOWN` erases from the cursor to the end of
+# the screen; combined with cursor-up it lets us re-render the same menu
+# in place without flicker.
+_CSI = "\x1b["
+_REVERSE = _CSI + "7m"
+_DIM = _CSI + "2m"
+_RESET = _CSI + "0m"
+
+
+def _truncate(s: str, width: int) -> str:
+    if len(s) <= width:
+        return s
+    if width <= 3:
+        return s[:width]
+    return s[: width - 3] + "..."
+
+
+def _render_single(
+    title: str,
+    options: list[tuple[str, str]],
+    cursor: int,
+) -> int:
+    """Render a single-select menu. Returns the number of lines printed."""
+    lines = 0
+    print(title)
+    lines += 1
+    for i, (label, hint) in enumerate(options):
+        pointer = "›" if i == cursor else " "
+        row = f" {pointer} {label}"
+        if i == cursor:
+            print(f"{_REVERSE}{row}{_RESET}")
+        else:
+            print(row)
+        lines += 1
+        if hint:
+            print(f"     {_DIM}{_truncate(hint, 100)}{_RESET}")
+            lines += 1
+    print(f"  {_DIM}(↑/↓ move · enter = confirm · q = cancel){_RESET}")
+    lines += 1
+    sys.stdout.flush()
+    return lines
+
+
+def _menu_single(title: str, options: list[tuple[str, str]]) -> int:
+    if not _supports_arrow_menus():
+        return _pick_numbered(title, options)
+    cursor = 0
+    lines = _render_single(title, options, cursor)
+    try:
+        while True:
+            key = _read_key()
+            if key == "up":
+                cursor = (cursor - 1) % len(options)
+            elif key == "down":
+                cursor = (cursor + 1) % len(options)
+            elif key in ("home", "pageup"):
+                cursor = 0
+            elif key in ("end", "pagedown"):
+                cursor = len(options) - 1
+            elif key == "enter":
+                return cursor
+            elif key in ("q", "esc"):
+                print()
+                raise SystemExit(130)
+            else:
+                continue
+            sys.stdout.write(f"{_CSI}{lines}A{_CSI}J")
+            sys.stdout.flush()
+            lines = _render_single(title, options, cursor)
+    except KeyboardInterrupt:
+        print()
+        raise SystemExit(130)
+
+
+def _render_multi(
+    title: str,
+    items: list[SkillInfo],
+    cursor: int,
+    selected: set[int],
+) -> int:
+    lines = 0
+    print(title)
+    lines += 1
+    for i, s in enumerate(items):
+        mark = "x" if i in selected else " "
+        pointer = "›" if i == cursor else " "
+        desc = _truncate(s.description, 55)
+        head = f" {pointer} [{mark}] {s.name}"
+        row = f"{head}  {_DIM}— {desc}{_RESET}" if desc else head
+        if i == cursor:
+            # Reverse video only on the non-dim part so highlight is readable.
+            print(f"{_REVERSE}{head}{_RESET}  {_DIM}— {desc}{_RESET}"
+                  if desc else f"{_REVERSE}{head}{_RESET}")
+        else:
+            print(row)
+        lines += 1
+    print(
+        f"  {_DIM}(↑/↓ move · space = toggle · a = all · n = none · "
+        f"enter = confirm · q = cancel){_RESET}"
+    )
+    lines += 1
+    sys.stdout.flush()
+    return lines
+
+
+def _menu_multi(
+    title: str,
+    items: list[SkillInfo],
+    *,
+    initial_selected: Optional[set[int]] = None,
+) -> list[str]:
+    if not _supports_arrow_menus():
+        return _pick_multi(title, items, initial_selected=initial_selected)
+    cursor = 0
+    if initial_selected is None:
+        selected: set[int] = set(range(len(items)))  # default: all selected
+    else:
+        selected = set(initial_selected)
+    lines = _render_multi(title, items, cursor, selected)
+    try:
+        while True:
+            key = _read_key()
+            if key == "up":
+                cursor = (cursor - 1) % len(items)
+            elif key == "down":
+                cursor = (cursor + 1) % len(items)
+            elif key in ("home", "pageup"):
+                cursor = 0
+            elif key in ("end", "pagedown"):
+                cursor = len(items) - 1
+            elif key == "space":
+                if cursor in selected:
+                    selected.remove(cursor)
+                else:
+                    selected.add(cursor)
+            elif key == "a":
+                selected = set(range(len(items)))
+            elif key == "n":
+                selected = set()
+            elif key == "enter":
+                if not selected:
+                    # Empty selection: audible beep, keep going.
+                    sys.stdout.write("\a")
+                    sys.stdout.flush()
+                    continue
+                return [items[i].name for i in sorted(selected)]
+            elif key in ("q", "esc"):
+                print()
+                raise SystemExit(130)
+            else:
+                continue
+            sys.stdout.write(f"{_CSI}{lines}A{_CSI}J")
+            sys.stdout.flush()
+            lines = _render_multi(title, items, cursor, selected)
+    except KeyboardInterrupt:
+        print()
+        raise SystemExit(130)
+
+
 def cmd_wizard(_args: Optional[argparse.Namespace] = None) -> int:
     print()
     print(f"skills installer — github.com/{REPO_OWNER}/{REPO_NAME}")
@@ -648,7 +936,7 @@ def cmd_wizard(_args: Optional[argparse.Namespace] = None) -> int:
 
     # Step 1: agent
     agent_order = ["claude", "roo", "cline"]
-    agent_idx = _pick_numbered(
+    agent_idx = _menu_single(
         "Step 1/3 — Which coding agent are you using?",
         [(AGENTS[k].label, AGENTS[k].note) for k in agent_order],
     )
@@ -661,37 +949,102 @@ def cmd_wizard(_args: Optional[argparse.Namespace] = None) -> int:
         ("Global  (user-wide, every project)", f"{agent.global_dir()}"),
         ("Workspace  (this folder only)", f"{agent.workspace_dir()}"),
     ]
-    scope_idx = _pick_numbered(
+    scope_idx = _menu_single(
         "Step 2/3 — Install globally or only for the current workspace?",
         scope_options,
     )
     scope = "global" if scope_idx == 0 else "workspace"
     print()
 
-    # Step 3: skills
+    # Step 3: list available skills, detect what's already installed, and
+    # let the user toggle in one unified multi-select.
+    #
+    # The selection drives three kinds of actions on confirm:
+    #   - checked & not installed           -> install
+    #   - checked & already installed       -> update (reinstall from source)
+    #   - unchecked & was installed         -> uninstall
+    target_root = resolve_target(agent_key, scope)
+    installed = _scan_installed(target_root)
+
     print("fetching available skills...")
     try:
-        skills = list_skills()
+        available = list_skills()
     except SystemExit as e:
         print(f"{e}", file=sys.stderr)
-        return 1
-    if not skills:
-        print("no skills found — nothing to install.")
-        return 1
-    print(f"found {len(skills)} skill(s).")
-    print()
+        # Even if the fetch fails, we may still have installed skills to
+        # manage (uninstall). Only give up if nothing's around.
+        if not installed:
+            return 1
+        available = []
 
-    chosen = _pick_multi(
-        "Step 3/3 — Which skills do you want to install?",
-        skills,
+    avail_map: dict[str, SkillInfo] = {s.name: s for s in available}
+    all_names = sorted(set(avail_map.keys()) | installed)
+    if not all_names:
+        print("no skills available and none installed — nothing to do.")
+        return 0
+
+    # Build menu entries: each row gets a status badge so the user can see
+    # what's installed, what's new, and what's an orphan (installed but the
+    # upstream source is gone).
+    entries: list[SkillInfo] = []
+    initial_selected: set[int] = set()
+    for i, name in enumerate(all_names):
+        info = avail_map.get(name)
+        desc = info.description if info else ""
+        if name in installed and info is not None:
+            badge = "[installed]"
+            initial_selected.add(i)
+        elif name in installed:
+            badge = "[installed · no source]"
+            initial_selected.add(i)
+        else:
+            badge = "[new]"
+        label_desc = f"{badge} {desc}".strip()
+        entries.append(SkillInfo(name=name, description=label_desc))
+
+    print(
+        f"found {len(avail_map)} available skill(s), "
+        f"{len(installed)} already installed at {target_root}"
     )
     print()
 
+    chosen = _menu_multi(
+        "Step 3/3 — Toggle skills to install / update / remove:",
+        entries,
+        initial_selected=initial_selected,
+    )
+    chosen_set = set(chosen)
+    print()
+
+    # Classify the diff.
+    to_install = sorted(chosen_set - installed)
+    to_uninstall = sorted(installed - chosen_set)
+    kept = chosen_set & installed
+    to_update = sorted(n for n in kept if n in avail_map)
+    kept_orphans = sorted(n for n in kept if n not in avail_map)
+
+    if not (to_install or to_update or to_uninstall):
+        print("no changes requested — nothing to do.")
+        return 0
+
     # Summary + confirmation
-    target_root = resolve_target(agent_key, scope)
-    print("About to install:")
-    for name in chosen:
-        print(f"  • {name}  →  {target_root / name}")
+    print("About to apply:")
+    if to_install:
+        print(f"  + install   ({len(to_install)}):")
+        for n in to_install:
+            print(f"      {n}  →  {target_root / n}")
+    if to_update:
+        print(f"  ↻ update    ({len(to_update)}):")
+        for n in to_update:
+            print(f"      {n}  →  {target_root / n}")
+    if to_uninstall:
+        print(f"  - uninstall ({len(to_uninstall)}):")
+        for n in to_uninstall:
+            print(f"      {n}  →  {target_root / n}")
+    if kept_orphans:
+        print(f"  = keep as-is (no upstream source) ({len(kept_orphans)}):")
+        for n in kept_orphans:
+            print(f"      {n}")
     print()
     confirm = _prompt("Proceed? [Y/n] ").lower()
     if confirm not in ("", "y", "yes"):
@@ -699,23 +1052,39 @@ def cmd_wizard(_args: Optional[argparse.Namespace] = None) -> int:
         return 1
     print()
 
-    # Install each skill
+    # Execute: remove first (frees any locked paths), then install+update.
     failures: list[str] = []
-    for name in chosen:
+
+    for name in to_uninstall:
         dst = target_root / name
-        print(f"installing {name} → {dst}")
+        print(f"uninstalling {name} → {dst}")
+        try:
+            if dst.exists():
+                shutil.rmtree(dst)
+            print("  ✓ removed")
+        except OSError as e:
+            print(f"  ✗ failed: {e}", file=sys.stderr)
+            failures.append(name)
+
+    # install_skill overwrites existing dirs, so update = reinstall.
+    for name in sorted(to_install + to_update):
+        dst = target_root / name
+        action = "updating" if name in installed else "installing"
+        print(f"{action} {name} → {dst}")
         try:
             install_skill(name, dst, dry_run=False)
+            print("  ✓ done")
         except (OSError, SystemExit) as e:
             print(f"  ✗ failed: {e}", file=sys.stderr)
             failures.append(name)
-            continue
-        print("  ✓ done")
 
-    # Post-install hints (once, based on the agent/scope the user picked)
-    if chosen and not failures:
+    # Post-install hint (pick any installed/updated skill as the sample)
+    sample_name = next(iter(to_install + to_update), None)
+    if sample_name is not None and sample_name not in failures:
         print()
-        _print_post_install_hint(agent_key, scope, target_root / chosen[0], chosen[0])
+        _print_post_install_hint(
+            agent_key, scope, target_root / sample_name, sample_name
+        )
 
     if failures:
         print()
@@ -800,6 +1169,10 @@ def main(argv: Optional[list[str]] = None) -> int:
             stream.reconfigure(encoding="utf-8", errors="replace")  # type: ignore[attr-defined]
         except (AttributeError, ValueError):
             pass
+
+    # Enable ANSI escape processing on Windows so the arrow-key menus can
+    # repaint with cursor-up / clear-to-end. No-op on macOS/Linux.
+    _enable_vt_windows()
 
     args = build_parser().parse_args(argv)
 
