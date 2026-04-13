@@ -33,6 +33,7 @@ import json
 import os
 import platform
 import shutil
+import ssl
 import sys
 import time
 import urllib.error
@@ -145,11 +146,12 @@ class SkillInfo:
 
 # --- local source ----------------------------------------------------------
 
-def _local_list_skills() -> list[SkillInfo]:
-    if not LOCAL_SKILLS_DIR.is_dir():
+def _local_list_skills(root: Optional[Path] = None) -> list[SkillInfo]:
+    root = root if root is not None else LOCAL_SKILLS_DIR
+    if not root.is_dir():
         return []
     out: list[SkillInfo] = []
-    for p in sorted(LOCAL_SKILLS_DIR.iterdir()):
+    for p in sorted(root.iterdir()):
         if not p.is_dir() or p.name.startswith("_"):
             continue
         if not (p / "SKILL.md").exists():
@@ -191,6 +193,20 @@ def _extract_description(text: str) -> str:
 _RETRY_DELAYS = (2, 4, 8, 16)
 _RETRYABLE_STATUSES = frozenset({408, 429, 500, 502, 503, 504})
 
+# --insecure / SKILLS_INSTALLER_INSECURE=1 disables TLS verification for
+# corporate environments that intercept HTTPS with a self-signed CA. It's the
+# moral equivalent of pip's `--trusted-host` flag. Off by default.
+_INSECURE_TLS: bool = os.environ.get("SKILLS_INSTALLER_INSECURE", "") not in ("", "0")
+
+
+def _ssl_context() -> Optional[ssl.SSLContext]:
+    if not _INSECURE_TLS:
+        return None
+    ctx = ssl.create_default_context()
+    ctx.check_hostname = False
+    ctx.verify_mode = ssl.CERT_NONE
+    return ctx
+
 
 def _gh_get(url: str) -> bytes:
     req = urllib.request.Request(
@@ -201,9 +217,10 @@ def _gh_get(url: str) -> bytes:
         },
     )
     attempts = len(_RETRY_DELAYS) + 1
+    ctx = _ssl_context()
     for attempt in range(1, attempts + 1):
         try:
-            with urllib.request.urlopen(req, timeout=30) as r:
+            with urllib.request.urlopen(req, timeout=30, context=ctx) as r:
                 return r.read()
         except urllib.error.HTTPError as e:
             if e.code == 403:
@@ -290,9 +307,88 @@ def _remote_list_skills() -> list[SkillInfo]:
     return sorted(out, key=lambda s: s.name)
 
 
+# --- tarball source (codeload.github.com) ----------------------------------
+#
+# The per-file GitHub Contents API is rate-limited and flaky: a single
+# 503 on /repos/.../contents breaks the wizard mid-step. codeload.github.com
+# serves the full repo as a tarball in one request and runs on separate
+# infrastructure — so we prefer it, and fall back to the Contents API only
+# if the tarball download fails.
+
+_REMOTE_TARBALL_CACHE: Optional[Path] = None
+_REMOTE_TARBALL_ATTEMPTED = False
+
+
+def _ensure_tarball() -> Optional[Path]:
+    """Download + extract the repo tarball once. Returns the skills/ dir or None."""
+    global _REMOTE_TARBALL_CACHE, _REMOTE_TARBALL_ATTEMPTED
+    if _REMOTE_TARBALL_ATTEMPTED:
+        return _REMOTE_TARBALL_CACHE
+    _REMOTE_TARBALL_ATTEMPTED = True
+    _REMOTE_TARBALL_CACHE = _try_fetch_tarball()
+    return _REMOTE_TARBALL_CACHE
+
+
+def _try_fetch_tarball() -> Optional[Path]:
+    import io
+    import tarfile
+    import tempfile
+
+    url = (
+        f"https://codeload.github.com/{REPO_OWNER}/{REPO_NAME}"
+        f"/tar.gz/refs/heads/{REPO_BRANCH}"
+    )
+    print(
+        f"  downloading repo tarball from codeload.github.com "
+        f"({REPO_BRANCH})...",
+        file=sys.stderr,
+    )
+    try:
+        data = _gh_get(url)
+    except SystemExit as e:
+        print(f"  tarball download failed: {e}", file=sys.stderr)
+        return None
+
+    tmpdir = Path(tempfile.mkdtemp(prefix="skills-installer-"))
+    try:
+        with tarfile.open(fileobj=io.BytesIO(data), mode="r:gz") as tf:
+            safe: list = []
+            for m in tf.getmembers():
+                # Reject absolute paths and parent-traversal entries.
+                if m.name.startswith("/") or ".." in Path(m.name).parts:
+                    print(
+                        f"  unsafe tarball entry rejected: {m.name}",
+                        file=sys.stderr,
+                    )
+                    return None
+                # Skip symlinks, hardlinks, devices; keep regular files + dirs.
+                if not (m.isfile() or m.isdir()):
+                    continue
+                safe.append(m)
+            tf.extractall(tmpdir, members=safe)
+    except (OSError, tarfile.TarError) as e:
+        print(f"  tarball extraction failed: {e}", file=sys.stderr)
+        return None
+
+    # Tarball top-level is "<repo>-<branch>/"; find it and return its skills/.
+    for child in tmpdir.iterdir():
+        if child.is_dir():
+            skills_dir = child / "skills"
+            if skills_dir.is_dir():
+                return skills_dir
+    print(
+        "  tarball did not contain a skills/ directory",
+        file=sys.stderr,
+    )
+    return None
+
+
 def list_skills() -> list[SkillInfo]:
     if is_local_mode():
         return _local_list_skills()
+    tarball_dir = _ensure_tarball()
+    if tarball_dir is not None:
+        return _local_list_skills(tarball_dir)
     return _remote_list_skills()
 
 
@@ -329,20 +425,35 @@ def _remote_download_tree(repo_path: str, dst: Path) -> None:
 
 
 def install_skill(skill_name: str, target: Path, *, dry_run: bool) -> None:
-    """Copy (local) or download (remote) the skill into `target`."""
+    """Copy (local / tarball) or download (Contents API) the skill into `target`."""
     if dry_run:
         return
     target.parent.mkdir(parents=True, exist_ok=True)
     if target.exists():
         shutil.rmtree(target)
+
+    # Source 1: cloned repo next to install.py
     if is_local_mode():
         src = LOCAL_SKILLS_DIR / skill_name
         if not src.is_dir() or not (src / "SKILL.md").exists():
             raise SystemExit(f"error: local skill not found: {src}")
         shutil.copytree(src, target)
-    else:
-        print(f"  fetching from github.com/{REPO_OWNER}/{REPO_NAME}...")
-        _remote_download_tree(f"skills/{skill_name}", target)
+        return
+
+    # Source 2: tarball fetched once from codeload.github.com
+    tarball_dir = _ensure_tarball()
+    if tarball_dir is not None:
+        src = tarball_dir / skill_name
+        if not src.is_dir() or not (src / "SKILL.md").exists():
+            raise SystemExit(
+                f"error: skill not found in tarball: {skill_name}"
+            )
+        shutil.copytree(src, target)
+        return
+
+    # Source 3: fall back to the GitHub Contents API (per-file downloads)
+    print(f"  fetching from github.com/{REPO_OWNER}/{REPO_NAME}...")
+    _remote_download_tree(f"skills/{skill_name}", target)
 
 
 # ---------------------------------------------------------------------------
@@ -647,6 +758,14 @@ def build_parser() -> argparse.ArgumentParser:
         description="Skills cross-platform installer (zero dependencies). "
                     "Run with no arguments for the interactive wizard.",
     )
+    # Top-level flag so it works in wizard mode AND with every subcommand.
+    p.add_argument(
+        "--insecure",
+        action="store_true",
+        help="Skip TLS certificate verification (for corporate proxies "
+             "with TLS interception). Equivalent to pip's --trusted-host. "
+             "You can also set SKILLS_INSTALLER_INSECURE=1.",
+    )
     sub = p.add_subparsers(dest="command")
 
     sub.add_parser("list", help="List skills available in this repo / remote.")
@@ -683,6 +802,22 @@ def main(argv: Optional[list[str]] = None) -> int:
             pass
 
     args = build_parser().parse_args(argv)
+
+    # Apply --insecure (or SKILLS_INSTALLER_INSECURE=1) globally so every
+    # HTTPS call — tarball, Contents API, raw files — uses the same context.
+    global _INSECURE_TLS
+    if args.insecure:
+        _INSECURE_TLS = True
+    if _INSECURE_TLS:
+        print(
+            "warning: TLS verification disabled (--insecure). "
+            "Only use on trusted corporate networks.",
+            file=sys.stderr,
+        )
+
+    proxy = os.environ.get("HTTPS_PROXY") or os.environ.get("HTTP_PROXY")
+    if proxy:
+        print(f"using proxy: {proxy}", file=sys.stderr)
 
     if args.command is None:
         return cmd_wizard(args)
