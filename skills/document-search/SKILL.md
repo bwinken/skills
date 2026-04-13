@@ -31,35 +31,55 @@ Fire this skill when the user asks, in any phrasing, one of:
 
 ## Usage
 
+> **How to invoke this skill** — read this **before running any example below**.
+>
+> 1. **Use the absolute path.** Your working directory is the user's
+>    workspace, not the skill folder. `python scripts/document_search.py ...`
+>    (relative) will fail — the script lives inside this skill's own folder.
+>    Substitute the real install location wherever you see
+>    `<SKILL_DIR>` / `~/.claude/skills/document-search/`:
+>
+>    | Agent       | Global                                 | Workspace                                       |
+>    |-------------|----------------------------------------|-------------------------------------------------|
+>    | Claude Code | `~/.claude/skills/document-search/`    | `<cwd>/.claude/skills/document-search/`         |
+>    | Roo Code    | `~/.roo/skills/document-search/`       | `<cwd>/.roo/skills/document-search/`            |
+>    | Cline       | `~/.cline/skills/document-search/`     | `<cwd>/.cline/skills/document-search/`          |
+>
+>    The real path is wherever **this SKILL.md** is loaded from.
+>
+> 2. **Pick the right Python command.** The examples below use `python` —
+>    which is what Windows installs. On macOS / Linux where only `python3`
+>    exists, substitute `python3`. On Windows you can also use `py -3`.
+
 Basic — find every occurrence of a term under the current directory:
 
 ```bash
-python3 scripts/document_search.py "auth token"
+python ~/.claude/skills/document-search/scripts/document_search.py "auth token"
 ```
 
 Literal (non-regex) match, case-insensitive, scoped to `./docs`:
 
 ```bash
-python3 scripts/document_search.py "Auth Token" ./docs -F -i
+python ~/.claude/skills/document-search/scripts/document_search.py "Auth Token" ./docs -F -i
 ```
 
 Restrict to code files and show the matched lines with 1 line of context:
 
 ```bash
-python3 scripts/document_search.py "TODO|FIXME" ./src --ext .py,.ts,.go --show-matches --context 1
+python ~/.claude/skills/document-search/scripts/document_search.py "TODO|FIXME" ./src --ext .py,.ts,.go --show-matches --context 1
 ```
 
 Search Office + PDF documents (install optional libs first):
 
 ```bash
 pip install python-docx python-pptx openpyxl pypdf
-python3 scripts/document_search.py "quarterly revenue" ./reports --ext .docx,.xlsx,.pdf
+python ~/.claude/skills/document-search/scripts/document_search.py "quarterly revenue" ./reports --ext .docx,.xlsx,.pdf
 ```
 
 Machine-readable output for agent-to-agent pipelines:
 
 ```bash
-python3 scripts/document_search.py "deprecated" . --format json
+python ~/.claude/skills/document-search/scripts/document_search.py "deprecated" . --format json
 ```
 
 ## Options
@@ -163,7 +183,7 @@ See the [root README](../../README.md#installation) — covers the one-file inst
 The `## Usage` section above lists common invocations. Here is one end-to-end example so the agent knows what to expect back from the script:
 
 ```bash
-python3 scripts/document_search.py "DATABASE_URL" .
+python ~/.claude/skills/document-search/scripts/document_search.py "DATABASE_URL" .
 ```
 
 ```text

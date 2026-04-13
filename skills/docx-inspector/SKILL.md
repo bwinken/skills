@@ -43,34 +43,53 @@ Fire this skill when the user asks, in any phrasing:
 
 ## Usage
 
+> **How to invoke this skill** — read this **before running any example below**.
+>
+> 1. **Use the absolute path.** Your working directory is the user's
+>    workspace, not the skill folder. `python scripts/...` (relative) will
+>    fail — the scripts live inside this skill's own folder. Substitute the
+>    real install location wherever you see `~/.claude/skills/docx-inspector/`:
+>
+>    | Agent       | Global                          | Workspace                                |
+>    |-------------|---------------------------------|------------------------------------------|
+>    | Claude Code | `~/.claude/skills/docx-inspector/`      | `<cwd>/.claude/skills/docx-inspector/`           |
+>    | Roo Code    | `~/.roo/skills/docx-inspector/`         | `<cwd>/.roo/skills/docx-inspector/`              |
+>    | Cline       | `~/.cline/skills/docx-inspector/`       | `<cwd>/.cline/skills/docx-inspector/`            |
+>
+>    The real path is wherever **this SKILL.md** is loaded from.
+>
+> 2. **Pick the right Python command.** The examples below use `python` —
+>    which is what Windows installs. On macOS / Linux where only `python3`
+>    exists, substitute `python3`. On Windows you can also use `py -3`.
+
 Full inspection (default: metadata + changes + structure):
 
 ```bash
-python3 scripts/docx_inspector.py ./contract.docx
+python ~/.claude/skills/docx-inspector/scripts/docx_inspector.py ./contract.docx
 ```
 
 Metadata only:
 
 ```bash
-python3 scripts/docx_inspector.py ./contract.docx --feature metadata
+python ~/.claude/skills/docx-inspector/scripts/docx_inspector.py ./contract.docx --feature metadata
 ```
 
 Tracked changes only:
 
 ```bash
-python3 scripts/docx_inspector.py ./contract.docx --feature changes
+python ~/.claude/skills/docx-inspector/scripts/docx_inspector.py ./contract.docx --feature changes
 ```
 
 Heading hierarchy only:
 
 ```bash
-python3 scripts/docx_inspector.py ./contract.docx --feature structure
+python ~/.claude/skills/docx-inspector/scripts/docx_inspector.py ./contract.docx --feature structure
 ```
 
 JSON output for pipelines:
 
 ```bash
-python3 scripts/docx_inspector.py ./contract.docx --format json | jq '.changes'
+python ~/.claude/skills/docx-inspector/scripts/docx_inspector.py ./contract.docx --format json | jq '.changes'
 ```
 
 ## Options

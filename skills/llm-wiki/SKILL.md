@@ -85,7 +85,28 @@ This skill ships four stdlib-only Python scripts under `scripts/`:
 
 All three scripts accept `--format text|json`. For agent-to-agent pipelines prefer JSON.
 
-**Run them with the absolute path to the script**, since the skill's folder will be under `~/.claude/skills/llm-wiki/` (or the equivalent for Roo Code / Cline) and not in `$PATH`.
+> **How to invoke these scripts** — read this **before running**.
+>
+> 1. **Use the absolute path.** Your working directory is the user's
+>    workspace, not the skill folder. Bare `wiki_init.py ...` or
+>    `python scripts/wiki_init.py ...` will fail. The real path is
+>    wherever **this SKILL.md** is loaded from. Substitute the install
+>    location that matches the user's agent / scope:
+>
+>    | Agent       | Global                     | Workspace                            |
+>    |-------------|----------------------------|--------------------------------------|
+>    | Claude Code | `~/.claude/skills/llm-wiki/` | `<cwd>/.claude/skills/llm-wiki/`   |
+>    | Roo Code    | `~/.roo/skills/llm-wiki/`    | `<cwd>/.roo/skills/llm-wiki/`      |
+>    | Cline       | `~/.cline/skills/llm-wiki/`  | `<cwd>/.cline/skills/llm-wiki/`    |
+>
+> 2. **Pick the right Python command.** Use `python` on Windows, `python3`
+>    on macOS / Linux. On Windows you can also use `py -3`.
+>
+> Concrete example — scaffold a new wiki:
+>
+> ```bash
+> python ~/.claude/skills/llm-wiki/scripts/wiki_init.py ~/my-wiki --git
+> ```
 
 ## Recommended companion skills
 

@@ -31,22 +31,41 @@ Fire this skill when the user asks, in any phrasing:
 
 ## Usage
 
+> **How to invoke this skill** — read this **before running any example below**.
+>
+> 1. **Use the absolute path.** Your working directory is the user's
+>    workspace, not the skill folder. `python scripts/...` (relative) will
+>    fail — the scripts live inside this skill's own folder. Substitute the
+>    real install location wherever you see `~/.claude/skills/docx-reader/`:
+>
+>    | Agent       | Global                          | Workspace                                |
+>    |-------------|---------------------------------|------------------------------------------|
+>    | Claude Code | `~/.claude/skills/docx-reader/`      | `<cwd>/.claude/skills/docx-reader/`           |
+>    | Roo Code    | `~/.roo/skills/docx-reader/`         | `<cwd>/.roo/skills/docx-reader/`              |
+>    | Cline       | `~/.cline/skills/docx-reader/`       | `<cwd>/.cline/skills/docx-reader/`            |
+>
+>    The real path is wherever **this SKILL.md** is loaded from.
+>
+> 2. **Pick the right Python command.** The examples below use `python` —
+>    which is what Windows installs. On macOS / Linux where only `python3`
+>    exists, substitute `python3`. On Windows you can also use `py -3`.
+
 Read the whole document:
 
 ```bash
-python3 scripts/docx_reader.py ./spec.docx
+python ~/.claude/skills/docx-reader/scripts/docx_reader.py ./spec.docx
 ```
 
 Describe the file (paragraph + table counts) without dumping content:
 
 ```bash
-python3 scripts/docx_reader.py ./spec.docx --metadata-only
+python ~/.claude/skills/docx-reader/scripts/docx_reader.py ./spec.docx --metadata-only
 ```
 
 JSON for pipelines:
 
 ```bash
-python3 scripts/docx_reader.py ./spec.docx --format json
+python ~/.claude/skills/docx-reader/scripts/docx_reader.py ./spec.docx --format json
 ```
 
 ## Options

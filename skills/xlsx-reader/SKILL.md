@@ -31,22 +31,41 @@ Fire this skill when the user asks, in any phrasing:
 
 ## Usage
 
+> **How to invoke this skill** — read this **before running any example below**.
+>
+> 1. **Use the absolute path.** Your working directory is the user's
+>    workspace, not the skill folder. `python scripts/...` (relative) will
+>    fail — the scripts live inside this skill's own folder. Substitute the
+>    real install location wherever you see `~/.claude/skills/xlsx-reader/`:
+>
+>    | Agent       | Global                          | Workspace                                |
+>    |-------------|---------------------------------|------------------------------------------|
+>    | Claude Code | `~/.claude/skills/xlsx-reader/`      | `<cwd>/.claude/skills/xlsx-reader/`           |
+>    | Roo Code    | `~/.roo/skills/xlsx-reader/`         | `<cwd>/.roo/skills/xlsx-reader/`              |
+>    | Cline       | `~/.cline/skills/xlsx-reader/`       | `<cwd>/.cline/skills/xlsx-reader/`            |
+>
+>    The real path is wherever **this SKILL.md** is loaded from.
+>
+> 2. **Pick the right Python command.** The examples below use `python` —
+>    which is what Windows installs. On macOS / Linux where only `python3`
+>    exists, substitute `python3`. On Windows you can also use `py -3`.
+
 Read the whole workbook (every sheet):
 
 ```bash
-python3 scripts/xlsx_reader.py ./budget.xlsx
+python ~/.claude/skills/xlsx-reader/scripts/xlsx_reader.py ./budget.xlsx
 ```
 
 Read just one sheet:
 
 ```bash
-python3 scripts/xlsx_reader.py ./budget.xlsx --sheet "Q4 Summary"
+python ~/.claude/skills/xlsx-reader/scripts/xlsx_reader.py ./budget.xlsx --sheet "Q4 Summary"
 ```
 
 Describe the workbook (sheet names, size) without dumping content:
 
 ```bash
-python3 scripts/xlsx_reader.py ./budget.xlsx --metadata-only
+python ~/.claude/skills/xlsx-reader/scripts/xlsx_reader.py ./budget.xlsx --metadata-only
 ```
 
 ## Options
