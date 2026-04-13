@@ -45,34 +45,53 @@ Fire this skill when the user asks, in any phrasing:
 
 ## Usage
 
+> **How to invoke this skill** — read this **before running any example below**.
+>
+> 1. **Use the absolute path.** Your working directory is the user's
+>    workspace, not the skill folder. `python scripts/...` (relative) will
+>    fail — the scripts live inside this skill's own folder. Substitute the
+>    real install location wherever you see `~/.claude/skills/xlsx-inspector/`:
+>
+>    | Agent       | Global                          | Workspace                                |
+>    |-------------|---------------------------------|------------------------------------------|
+>    | Claude Code | `~/.claude/skills/xlsx-inspector/`      | `<cwd>/.claude/skills/xlsx-inspector/`           |
+>    | Roo Code    | `~/.roo/skills/xlsx-inspector/`         | `<cwd>/.roo/skills/xlsx-inspector/`              |
+>    | Cline       | `~/.cline/skills/xlsx-inspector/`       | `<cwd>/.cline/skills/xlsx-inspector/`            |
+>
+>    The real path is wherever **this SKILL.md** is loaded from.
+>
+> 2. **Pick the right Python command.** The examples below use `python` —
+>    which is what Windows installs. On macOS / Linux where only `python3`
+>    exists, substitute `python3`. On Windows you can also use `py -3`.
+
 Full inspection (default: metadata + formulas + named-ranges):
 
 ```bash
-python3 scripts/xlsx_inspector.py ./budget.xlsx
+python ~/.claude/skills/xlsx-inspector/scripts/xlsx_inspector.py ./budget.xlsx
 ```
 
 Metadata only:
 
 ```bash
-python3 scripts/xlsx_inspector.py ./budget.xlsx --feature metadata
+python ~/.claude/skills/xlsx-inspector/scripts/xlsx_inspector.py ./budget.xlsx --feature metadata
 ```
 
 Formula graph only:
 
 ```bash
-python3 scripts/xlsx_inspector.py ./budget.xlsx --feature formulas
+python ~/.claude/skills/xlsx-inspector/scripts/xlsx_inspector.py ./budget.xlsx --feature formulas
 ```
 
 Named ranges only:
 
 ```bash
-python3 scripts/xlsx_inspector.py ./budget.xlsx --feature named-ranges
+python ~/.claude/skills/xlsx-inspector/scripts/xlsx_inspector.py ./budget.xlsx --feature named-ranges
 ```
 
 JSON output for pipelines:
 
 ```bash
-python3 scripts/xlsx_inspector.py ./budget.xlsx --format json | jq '.formulas'
+python ~/.claude/skills/xlsx-inspector/scripts/xlsx_inspector.py ./budget.xlsx --format json | jq '.formulas'
 ```
 
 ## Options

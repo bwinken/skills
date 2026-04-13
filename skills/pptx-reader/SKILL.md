@@ -31,28 +31,47 @@ Fire this skill when the user asks, in any phrasing:
 
 ## Usage
 
+> **How to invoke this skill** — read this **before running any example below**.
+>
+> 1. **Use the absolute path.** Your working directory is the user's
+>    workspace, not the skill folder. `python scripts/...` (relative) will
+>    fail — the scripts live inside this skill's own folder. Substitute the
+>    real install location wherever you see `~/.claude/skills/pptx-reader/`:
+>
+>    | Agent       | Global                          | Workspace                                |
+>    |-------------|---------------------------------|------------------------------------------|
+>    | Claude Code | `~/.claude/skills/pptx-reader/`      | `<cwd>/.claude/skills/pptx-reader/`           |
+>    | Roo Code    | `~/.roo/skills/pptx-reader/`         | `<cwd>/.roo/skills/pptx-reader/`              |
+>    | Cline       | `~/.cline/skills/pptx-reader/`       | `<cwd>/.cline/skills/pptx-reader/`            |
+>
+>    The real path is wherever **this SKILL.md** is loaded from.
+>
+> 2. **Pick the right Python command.** The examples below use `python` —
+>    which is what Windows installs. On macOS / Linux where only `python3`
+>    exists, substitute `python3`. On Windows you can also use `py -3`.
+
 Read the whole deck:
 
 ```bash
-python3 scripts/pptx_reader.py ./deck.pptx
+python ~/.claude/skills/pptx-reader/scripts/pptx_reader.py ./deck.pptx
 ```
 
 Read slides 1-5:
 
 ```bash
-python3 scripts/pptx_reader.py ./deck.pptx --slides 1-5
+python ~/.claude/skills/pptx-reader/scripts/pptx_reader.py ./deck.pptx --slides 1-5
 ```
 
 Read slide 3 and slides 7-10:
 
 ```bash
-python3 scripts/pptx_reader.py ./deck.pptx --slides 3,7-10
+python ~/.claude/skills/pptx-reader/scripts/pptx_reader.py ./deck.pptx --slides 3,7-10
 ```
 
 Describe the deck (slide count, size) without dumping content:
 
 ```bash
-python3 scripts/pptx_reader.py ./deck.pptx --metadata-only
+python ~/.claude/skills/pptx-reader/scripts/pptx_reader.py ./deck.pptx --metadata-only
 ```
 
 ## Options

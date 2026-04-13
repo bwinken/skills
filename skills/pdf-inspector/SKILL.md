@@ -42,28 +42,47 @@ Fire this skill when the user asks, in any phrasing:
 
 ## Usage
 
+> **How to invoke this skill** — read this **before running any example below**.
+>
+> 1. **Use the absolute path.** Your working directory is the user's
+>    workspace, not the skill folder. `python scripts/...` (relative) will
+>    fail — the scripts live inside this skill's own folder. Substitute the
+>    real install location wherever you see `~/.claude/skills/pdf-inspector/`:
+>
+>    | Agent       | Global                          | Workspace                                |
+>    |-------------|---------------------------------|------------------------------------------|
+>    | Claude Code | `~/.claude/skills/pdf-inspector/`      | `<cwd>/.claude/skills/pdf-inspector/`           |
+>    | Roo Code    | `~/.roo/skills/pdf-inspector/`         | `<cwd>/.roo/skills/pdf-inspector/`              |
+>    | Cline       | `~/.cline/skills/pdf-inspector/`       | `<cwd>/.cline/skills/pdf-inspector/`            |
+>
+>    The real path is wherever **this SKILL.md** is loaded from.
+>
+> 2. **Pick the right Python command.** The examples below use `python` —
+>    which is what Windows installs. On macOS / Linux where only `python3`
+>    exists, substitute `python3`. On Windows you can also use `py -3`.
+
 Full inspection (default: both metadata and forms):
 
 ```bash
-python3 scripts/pdf_inspector.py ./report.pdf
+python ~/.claude/skills/pdf-inspector/scripts/pdf_inspector.py ./report.pdf
 ```
 
 Metadata only:
 
 ```bash
-python3 scripts/pdf_inspector.py ./report.pdf --feature metadata
+python ~/.claude/skills/pdf-inspector/scripts/pdf_inspector.py ./report.pdf --feature metadata
 ```
 
 Form inventory only:
 
 ```bash
-python3 scripts/pdf_inspector.py ./form.pdf --feature forms
+python ~/.claude/skills/pdf-inspector/scripts/pdf_inspector.py ./form.pdf --feature forms
 ```
 
 JSON output for pipelines:
 
 ```bash
-python3 scripts/pdf_inspector.py ./report.pdf --format json | jq '.metadata'
+python ~/.claude/skills/pdf-inspector/scripts/pdf_inspector.py ./report.pdf --format json | jq '.metadata'
 ```
 
 ## Options

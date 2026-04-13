@@ -32,34 +32,53 @@ Fire this skill when the user asks, in any phrasing:
 
 ## Usage
 
+> **How to invoke this skill** — read this **before running any example below**.
+>
+> 1. **Use the absolute path.** Your working directory is the user's
+>    workspace, not the skill folder. `python scripts/...` (relative) will
+>    fail — the scripts live inside this skill's own folder. Substitute the
+>    real install location wherever you see `~/.claude/skills/pdf-reader/`:
+>
+>    | Agent       | Global                          | Workspace                                |
+>    |-------------|---------------------------------|------------------------------------------|
+>    | Claude Code | `~/.claude/skills/pdf-reader/`      | `<cwd>/.claude/skills/pdf-reader/`           |
+>    | Roo Code    | `~/.roo/skills/pdf-reader/`         | `<cwd>/.roo/skills/pdf-reader/`              |
+>    | Cline       | `~/.cline/skills/pdf-reader/`       | `<cwd>/.cline/skills/pdf-reader/`            |
+>
+>    The real path is wherever **this SKILL.md** is loaded from.
+>
+> 2. **Pick the right Python command.** The examples below use `python` —
+>    which is what Windows installs. On macOS / Linux where only `python3`
+>    exists, substitute `python3`. On Windows you can also use `py -3`.
+
 Read an entire PDF:
 
 ```bash
-python3 scripts/pdf_reader.py ./report.pdf
+python ~/.claude/skills/pdf-reader/scripts/pdf_reader.py ./report.pdf
 ```
 
 Read only pages 1–5:
 
 ```bash
-python3 scripts/pdf_reader.py ./report.pdf --pages 1-5
+python ~/.claude/skills/pdf-reader/scripts/pdf_reader.py ./report.pdf --pages 1-5
 ```
 
 Read pages 3, 5, 7 and 10–12:
 
 ```bash
-python3 scripts/pdf_reader.py ./report.pdf --pages 3,5,7,10-12
+python ~/.claude/skills/pdf-reader/scripts/pdf_reader.py ./report.pdf --pages 3,5,7,10-12
 ```
 
 Just describe the file (page count, size) without dumping the content:
 
 ```bash
-python3 scripts/pdf_reader.py ./report.pdf --metadata-only
+python ~/.claude/skills/pdf-reader/scripts/pdf_reader.py ./report.pdf --metadata-only
 ```
 
 JSON output for pipelines:
 
 ```bash
-python3 scripts/pdf_reader.py ./report.pdf --format json | jq '.metadata'
+python ~/.claude/skills/pdf-reader/scripts/pdf_reader.py ./report.pdf --format json | jq '.metadata'
 ```
 
 ## Options

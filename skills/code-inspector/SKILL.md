@@ -44,41 +44,60 @@ Fire this skill when the user asks, in any phrasing:
 
 ## Usage
 
+> **How to invoke this skill** — read this **before running any example below**.
+>
+> 1. **Use the absolute path.** Your working directory is the user's
+>    workspace, not the skill folder. `python scripts/...` (relative) will
+>    fail — the scripts live inside this skill's own folder. Substitute the
+>    real install location wherever you see `~/.claude/skills/code-inspector/`:
+>
+>    | Agent       | Global                          | Workspace                                |
+>    |-------------|---------------------------------|------------------------------------------|
+>    | Claude Code | `~/.claude/skills/code-inspector/`      | `<cwd>/.claude/skills/code-inspector/`           |
+>    | Roo Code    | `~/.roo/skills/code-inspector/`         | `<cwd>/.roo/skills/code-inspector/`              |
+>    | Cline       | `~/.cline/skills/code-inspector/`       | `<cwd>/.cline/skills/code-inspector/`            |
+>
+>    The real path is wherever **this SKILL.md** is loaded from.
+>
+> 2. **Pick the right Python command.** The examples below use `python` —
+>    which is what Windows installs. On macOS / Linux where only `python3`
+>    exists, substitute `python3`. On Windows you can also use `py -3`.
+
 Full inspection (overview + AST — default):
 
 ```bash
-python3 scripts/code_inspector.py ./path/to/repo
+python ~/.claude/skills/code-inspector/scripts/code_inspector.py ./path/to/repo
 ```
 
 Just the overview (layer 1, fast, no AST parsing):
 
 ```bash
-python3 scripts/code_inspector.py ./path/to/repo --feature overview
+python ~/.claude/skills/code-inspector/scripts/code_inspector.py ./path/to/repo --feature overview
 ```
 
 Just the AST layer (Python files only):
 
 ```bash
-python3 scripts/code_inspector.py ./path/to/repo --feature ast
+python ~/.claude/skills/code-inspector/scripts/code_inspector.py ./path/to/repo --feature ast
 ```
 
 Add a directory tree on top of any feature:
 
 ```bash
-python3 scripts/code_inspector.py ./path/to/repo --tree --tree-depth 3
-python3 scripts/code_inspector.py ./path/to/repo --feature ast --tree
+python ~/.claude/skills/code-inspector/scripts/code_inspector.py ./path/to/repo --tree --tree-depth 3
+python ~/.claude/skills/code-inspector/scripts/code_inspector.py ./path/to/repo --feature ast --tree
 ```
 
 JSON output for pipelines:
 
 ```bash
-python3 scripts/code_inspector.py ./path/to/repo --format json | jq '.ast.most_complex_files'
+python ~/.claude/skills/code-inspector/scripts/code_inspector.py ./path/to/repo --format json | jq '.ast.most_complex_files'
 ```
 
 Cap the scan on a big monorepo:
 
 ```bash
-python3 scripts/code_inspector.py ./path/to/repo \
+python ~/.claude/skills/code-inspector/scripts/code_inspector.py ./path/to/repo \
     --max-files 2000 --max-depth 5 --max-ast-files 300
 ```
 
